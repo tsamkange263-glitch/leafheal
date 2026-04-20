@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "generatedAt": 1775984232769,
+  "entries": {
+    "Index@app/index.tsx:5": {
+      "element": {
+        "file": "app/index.tsx",
+        "line": 5
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/index.tsx",
+          "properties": {
+            "flex": {
+              "line": 7,
+              "col": 14,
+              "endCol": 15,
+              "raw": "1"
+            },
+            "justifyContent": {
+              "line": 8,
+              "col": 24,
+              "endCol": 32,
+              "raw": "\"center\""
+            },
+            "alignItems": {
+              "line": 9,
+              "col": 20,
+              "endCol": 28,
+              "raw": "\"center\""
+            }
+          }
+        }
+      ]
+    }
+  }
+}
