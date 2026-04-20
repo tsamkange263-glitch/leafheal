@@ -1,8 +1,9 @@
 /**
- * Base entity types for the app store.
- *
- * The skeleton phase will extend this file with app-specific entity
- * interfaces derived from the development plan's data model.
+ * Re-export types from lib/types for backward compatibility
  */
-
-export interface Preferences {}
+export type {
+  Tables,
+  TablesInsert,
+  RemedyData,
+  ScanResult,
+} from '@/lib/types';
