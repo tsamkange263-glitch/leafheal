@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
-import { useTextGeneration } from '@fastshot/ai';
+import { generateText } from '@fastshot/ai';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
@@ -19,6 +19,7 @@ interface AilmentResponse {
   ailment: string;
   response: string;
   timestamp: Date;
+  isError?: boolean;
 }
 
 interface AilmentQueryProps {
@@ -30,9 +31,9 @@ export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
   const [query, setQuery] = useState('');
   const [responses, setResponses] = useState<AilmentResponse[]>([]);
   const [isQuerying, setIsQuerying] = useState(false);
-  const { generateText } = useTextGeneration();
+  const inputRef = useRef<TextInput>(null);
 
-  const handleSubmitQuery = useCallback(async () => {
+  const handleSubmitQuery = async () => {
     const trimmedQuery = query.trim();
     if (!trimmedQuery || isQuerying) return;
 
@@ -59,25 +60,25 @@ CONDITION/AILMENT: "${currentQuery}"
 
 Provide a detailed, helpful response covering ALL of the following points:
 
-1. **Applicability**: Is ${plantName} applicable or beneficial for treating "${currentQuery}"? Be honest — if the plant has no known connection to this condition, say so clearly but suggest what it IS useful for instead.
+1. Applicability: Is ${plantName} applicable or beneficial for treating "${currentQuery}"? Be honest — if the plant has no known connection to this condition, say so clearly but suggest what it IS useful for instead.
 
-2. **Preparation Method**: If applicable, explain exactly how to prepare ${plantName} for this specific condition (tea, tincture, poultice, compress, steam inhalation, etc.). Include step-by-step instructions.
+2. Preparation Method: If applicable, explain exactly how to prepare ${plantName} for this specific condition (tea, tincture, poultice, compress, steam inhalation, etc.). Include step-by-step instructions.
 
-3. **Dosage Recommendations**: Provide specific dosage guidance — how much, how often, for how long. Include measurements where possible (teaspoons, cups, drops, etc.).
+3. Dosage Recommendations: Provide specific dosage guidance — how much, how often, for how long. Include measurements where possible (teaspoons, cups, drops, etc.).
 
-4. **Warnings & Contraindications**: Any specific warnings for using ${plantName} for this condition. Include drug interactions, pregnancy warnings, age restrictions, or conditions that could worsen.
+4. Warnings & Contraindications: Any specific warnings for using ${plantName} for this condition. Include drug interactions, pregnancy warnings, age restrictions, or conditions that could worsen.
 
-5. **Additional Notes**: Any complementary herbs that work well with ${plantName} for this condition, or lifestyle recommendations.
+5. Additional Notes: Any complementary herbs that work well with ${plantName} for this condition, or lifestyle recommendations.
 
 IMPORTANT RULES:
 - Always provide your best expert knowledge regardless of PDF reference availability.
 - Be specific and actionable — avoid vague generalizations.
 - If the plant has limited evidence for this condition, acknowledge that honestly while still providing what is known.
 - Never refuse to provide information. Always give your expert analysis.
-- Format your response with clear sections using the headers above.
-- Keep your response concise but comprehensive (aim for 200-400 words).${referenceSection}`;
+- Keep your response concise but comprehensive (aim for 200-400 words).
+- Do NOT use markdown formatting like ** or ## in your response. Use plain text only.${referenceSection}`;
 
-      const result = await generateText(prompt);
+      const result = await generateText({ prompt });
 
       if (result) {
         const newResponse: AilmentResponse = {
@@ -87,6 +88,8 @@ IMPORTANT RULES:
           timestamp: new Date(),
         };
         setResponses(prev => [newResponse, ...prev]);
+      } else {
+        throw new Error('No response received from AI');
       }
     } catch (error) {
       console.error('Ailment query error:', error);
@@ -95,12 +98,19 @@ IMPORTANT RULES:
         ailment: currentQuery,
         response: 'Unable to generate a response at this time. Please check your connection and try again.',
         timestamp: new Date(),
+        isError: true,
       };
       setResponses(prev => [errorResponse, ...prev]);
     } finally {
       setIsQuerying(false);
     }
-  }, [query, isQuerying, plantName, scientificName, generateText]);
+  };
+
+  const handleChipPress = (suggestion: string) => {
+    if (isQuerying) return;
+    setQuery(suggestion);
+    inputRef.current?.focus();
+  };
 
   return (
     <View style={{ gap: 16 }}>
@@ -115,11 +125,11 @@ IMPORTANT RULES:
           boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <View
             style={{
-              width: 32,
-              height: 32,
+              width: 34,
+              height: 34,
               borderRadius: 10,
               borderCurve: 'continuous',
               backgroundColor: 'rgba(46,125,50,0.1)',
@@ -127,7 +137,7 @@ IMPORTANT RULES:
               justifyContent: 'center',
             }}
           >
-            <Ionicons name="search-outline" size={18} color={Colors.primary} />
+            <Ionicons name="chatbubbles-outline" size={18} color={Colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
             <Text
@@ -164,14 +174,15 @@ IMPORTANT RULES:
             paddingHorizontal: 14,
             paddingVertical: 4,
             borderWidth: 1.5,
-            borderColor: Colors.border,
+            borderColor: isQuerying ? Colors.primary : Colors.border,
           }}
         >
           <Ionicons name="medical-outline" size={18} color={Colors.textSecondary} />
           <TextInput
+            ref={inputRef}
             value={query}
             onChangeText={setQuery}
-            placeholder="e.g. headache, diabetes, high blood pressure..."
+            placeholder="e.g. headache, diabetes, stomach ulcer..."
             placeholderTextColor={Colors.textLight}
             style={{
               flex: 1,
@@ -190,20 +201,20 @@ IMPORTANT RULES:
             onPress={handleSubmitQuery}
             disabled={!query.trim() || isQuerying}
             style={({ pressed }) => ({
-              width: 36,
-              height: 36,
-              borderRadius: 10,
+              width: 38,
+              height: 38,
+              borderRadius: 12,
               borderCurve: 'continuous',
               backgroundColor: query.trim() && !isQuerying
                 ? Colors.primary
-                : 'rgba(46,125,50,0.15)',
+                : 'rgba(46,125,50,0.12)',
               alignItems: 'center',
               justifyContent: 'center',
-              opacity: pressed ? 0.8 : 1,
+              opacity: pressed && query.trim() && !isQuerying ? 0.8 : 1,
             })}
           >
             {isQuerying ? (
-              <ActivityIndicator size="small" color={Colors.white} />
+              <ActivityIndicator size="small" color={Colors.primary} />
             ) : (
               <Ionicons
                 name="arrow-forward"
@@ -225,9 +236,8 @@ IMPORTANT RULES:
             (suggestion) => (
               <Pressable
                 key={suggestion}
-                onPress={() => {
-                  if (!isQuerying) setQuery(suggestion);
-                }}
+                onPress={() => handleChipPress(suggestion)}
+                disabled={isQuerying}
                 style={({ pressed }) => ({
                   paddingHorizontal: 12,
                   paddingVertical: 7,
@@ -237,6 +247,7 @@ IMPORTANT RULES:
                     : 'rgba(46,125,50,0.06)',
                   borderWidth: 1,
                   borderColor: 'rgba(46,125,50,0.15)',
+                  opacity: isQuerying ? 0.5 : 1,
                 })}
               >
                 <Text
@@ -263,8 +274,9 @@ IMPORTANT RULES:
             borderRadius: 16,
             borderCurve: 'continuous',
             padding: 20,
+            flexDirection: 'row',
             alignItems: 'center',
-            gap: 10,
+            gap: 12,
             boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
           }}
         >
@@ -274,7 +286,7 @@ IMPORTANT RULES:
               fontFamily: Fonts.medium,
               fontSize: 13,
               color: Colors.textSecondary,
-              textAlign: 'center',
+              flex: 1,
             }}
           >
             Analyzing if {plantName} can help with this condition...
@@ -298,27 +310,35 @@ IMPORTANT RULES:
           {/* Response header */}
           <View
             style={{
-              backgroundColor: 'rgba(46,125,50,0.06)',
+              backgroundColor: item.isError
+                ? 'rgba(211,47,47,0.06)'
+                : 'rgba(46,125,50,0.06)',
               paddingHorizontal: 18,
               paddingVertical: 12,
               flexDirection: 'row',
               alignItems: 'center',
-              gap: 8,
+              gap: 10,
               borderBottomWidth: 1,
-              borderBottomColor: 'rgba(46,125,50,0.08)',
+              borderBottomColor: item.isError
+                ? 'rgba(211,47,47,0.08)'
+                : 'rgba(46,125,50,0.08)',
             }}
           >
             <View
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 14,
-                backgroundColor: Colors.primary,
+                width: 30,
+                height: 30,
+                borderRadius: 15,
+                backgroundColor: item.isError ? Colors.error : Colors.primary,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Ionicons name="medical" size={14} color={Colors.white} />
+              <Ionicons
+                name={item.isError ? 'alert-circle' : 'medical'}
+                size={15}
+                color={Colors.white}
+              />
             </View>
             <View style={{ flex: 1 }}>
               <Text
@@ -350,37 +370,39 @@ IMPORTANT RULES:
               style={{
                 fontFamily: Fonts.regular,
                 fontSize: 14,
-                color: Colors.textPrimary,
+                color: item.isError ? Colors.error : Colors.textPrimary,
                 lineHeight: 22,
               }}
             >
-              {formatResponse(item.response)}
+              {cleanResponse(item.response)}
             </Text>
           </View>
 
-          {/* Disclaimer footer */}
-          <View
-            style={{
-              backgroundColor: 'rgba(255,111,0,0.05)',
-              paddingHorizontal: 18,
-              paddingVertical: 10,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            <Ionicons name="information-circle-outline" size={14} color={Colors.warning} />
-            <Text
+          {/* Disclaimer footer - only for successful responses */}
+          {!item.isError && (
+            <View
               style={{
-                fontFamily: Fonts.regular,
-                fontSize: 11,
-                color: Colors.warning,
-                flex: 1,
+                backgroundColor: 'rgba(255,111,0,0.05)',
+                paddingHorizontal: 18,
+                paddingVertical: 10,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
               }}
             >
-              For educational purposes only. Consult a healthcare professional before use.
-            </Text>
-          </View>
+              <Ionicons name="information-circle-outline" size={14} color={Colors.warning} />
+              <Text
+                style={{
+                  fontFamily: Fonts.regular,
+                  fontSize: 11,
+                  color: Colors.warning,
+                  flex: 1,
+                }}
+              >
+                For educational purposes only. Consult a healthcare professional before use.
+              </Text>
+            </View>
+          )}
         </Animated.View>
       ))}
     </View>
@@ -388,10 +410,11 @@ IMPORTANT RULES:
 }
 
 // Helper to clean up markdown-style formatting from AI response
-function formatResponse(text: string): string {
+function cleanResponse(text: string): string {
   return text
-    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold markers (display as plain text)
-    .replace(/\*(.*?)\*/g, '$1') // Remove italic markers
-    .replace(/#{1,3}\s/g, '') // Remove heading markers
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/#{1,3}\s/g, '')
+    .replace(/```[\s\S]*?```/g, '')
     .trim();
 }
