@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { CreditBadge } from '@/components/credit-badge';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 
 export default function ScanScreen() {
   const router = useRouter();
@@ -71,6 +71,11 @@ export default function ScanScreen() {
           aspect: [1, 1],
         });
       } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Needed', 'Photo library access is required to select images.');
+          return;
+        }
         result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ['images'],
           quality: 0.8,
@@ -233,6 +238,9 @@ Only return the JSON, nothing else.`
     processResult();
   }
 
+  // Calculate card width for the two options (split layout)
+  const cardWidth = (width - 24 * 2 - 14) / 2;
+
   return (
     <View
       style={{
@@ -269,52 +277,186 @@ Only return the JSON, nothing else.`
             <CreditBadge credits={credits} showTopUp={false} compact />
           </View>
 
-          {/* Camera view placeholder with leaf frame */}
+          {/* Title and description */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 32,
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <Animated.View entering={FadeIn.duration(600)}>
+              <View
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 36,
+                  backgroundColor: 'rgba(139,195,74,0.12)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 8,
+                }}
+              >
+                <Ionicons name="leaf" size={36} color={Colors.accent} />
+              </View>
+            </Animated.View>
+            <Animated.Text
+              entering={FadeInDown.delay(150).duration(500)}
+              style={{
+                fontFamily: Fonts.bold,
+                fontSize: 24,
+                color: Colors.white,
+                textAlign: 'center',
+              }}
+            >
+              Identify a Plant
+            </Animated.Text>
+            <Animated.Text
+              entering={FadeInDown.delay(300).duration(500)}
+              style={{
+                fontFamily: Fonts.regular,
+                fontSize: 15,
+                color: 'rgba(255,255,255,0.6)',
+                textAlign: 'center',
+                lineHeight: 22,
+                maxWidth: 280,
+              }}
+            >
+              Take a photo or choose from your gallery to identify any plant instantly
+            </Animated.Text>
+          </View>
+
+          {/* Two prominent option cards */}
           <View
             style={{
               flex: 1,
-              alignItems: 'center',
               justifyContent: 'center',
-              paddingHorizontal: 40,
+              paddingHorizontal: 24,
             }}
           >
-            {/* Leaf frame overlay */}
-            <View
+            <Animated.View
+              entering={FadeInUp.delay(400).duration(600)}
               style={{
-                width: width - 100,
-                height: width - 100,
-                maxWidth: 300,
-                maxHeight: 300,
-                borderRadius: 30,
-                borderCurve: 'continuous',
-                borderWidth: 2,
-                borderColor: 'rgba(139,195,74,0.5)',
-                borderStyle: 'dashed',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 12,
+                flexDirection: 'row',
+                gap: 14,
               }}
             >
-              <Ionicons name="leaf-outline" size={64} color="rgba(139,195,74,0.4)" />
-              <Text
-                style={{
-                  fontFamily: Fonts.semiBold,
-                  fontSize: 14,
-                  color: 'rgba(255,255,255,0.6)',
-                  textAlign: 'center',
-                }}
+              {/* Take Photo Card */}
+              <Pressable
+                onPress={() => pickImage(true)}
+                style={({ pressed }) => ({
+                  width: cardWidth,
+                  backgroundColor: pressed ? 'rgba(139,195,74,0.25)' : 'rgba(139,195,74,0.12)',
+                  borderRadius: 24,
+                  borderCurve: 'continuous',
+                  paddingVertical: 28,
+                  paddingHorizontal: 16,
+                  alignItems: 'center',
+                  gap: 14,
+                  borderWidth: 1.5,
+                  borderColor: pressed ? Colors.accent : 'rgba(139,195,74,0.3)',
+                  transform: [{ scale: pressed ? 0.97 : 1 }],
+                })}
               >
-                Frame the leaf for{'\n'}identification
-              </Text>
-            </View>
+                <View
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 32,
+                    backgroundColor: Colors.accent,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 16px rgba(139,195,74,0.4)',
+                  }}
+                >
+                  <Ionicons name="camera" size={30} color={Colors.white} />
+                </View>
+                <Text
+                  style={{
+                    fontFamily: Fonts.bold,
+                    fontSize: 16,
+                    color: Colors.white,
+                    textAlign: 'center',
+                  }}
+                >
+                  Take Photo
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: Fonts.regular,
+                    fontSize: 12,
+                    color: 'rgba(255,255,255,0.55)',
+                    textAlign: 'center',
+                    lineHeight: 17,
+                  }}
+                >
+                  Open camera to{'\n'}capture a live image
+                </Text>
+              </Pressable>
+
+              {/* Pick from Gallery Card */}
+              <Pressable
+                onPress={() => pickImage(false)}
+                style={({ pressed }) => ({
+                  width: cardWidth,
+                  backgroundColor: pressed ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)',
+                  borderRadius: 24,
+                  borderCurve: 'continuous',
+                  paddingVertical: 28,
+                  paddingHorizontal: 16,
+                  alignItems: 'center',
+                  gap: 14,
+                  borderWidth: 1.5,
+                  borderColor: pressed ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.15)',
+                  transform: [{ scale: pressed ? 0.97 : 1 }],
+                })}
+              >
+                <View
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 32,
+                    backgroundColor: 'rgba(255,255,255,0.15)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1.5,
+                    borderColor: 'rgba(255,255,255,0.2)',
+                  }}
+                >
+                  <Ionicons name="images" size={28} color={Colors.white} />
+                </View>
+                <Text
+                  style={{
+                    fontFamily: Fonts.bold,
+                    fontSize: 16,
+                    color: Colors.white,
+                    textAlign: 'center',
+                  }}
+                >
+                  Gallery
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: Fonts.regular,
+                    fontSize: 12,
+                    color: 'rgba(255,255,255,0.55)',
+                    textAlign: 'center',
+                    lineHeight: 17,
+                  }}
+                >
+                  Choose an existing{'\n'}photo from your library
+                </Text>
+              </Pressable>
+            </Animated.View>
           </View>
 
-          {/* Bottom controls */}
+          {/* Bottom area: tips and no-credits warning */}
           <View
             style={{
               paddingBottom: insets.bottom + 20,
               paddingHorizontal: 24,
-              gap: 16,
+              gap: 14,
               alignItems: 'center',
             }}
           >
@@ -327,7 +469,7 @@ Only return the JSON, nothing else.`
                   gap: 6,
                   backgroundColor: 'rgba(233,30,99,0.15)',
                   paddingHorizontal: 16,
-                  paddingVertical: 8,
+                  paddingVertical: 10,
                   borderRadius: 20,
                 }}
               >
@@ -344,63 +486,29 @@ Only return the JSON, nothing else.`
               </Pressable>
             )}
 
+            {/* Quick tips */}
             <View
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                justifyContent: 'center',
-                gap: 40,
+                gap: 6,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                backgroundColor: 'rgba(255,255,255,0.06)',
+                borderRadius: 12,
+                borderCurve: 'continuous',
               }}
             >
-              {/* Gallery */}
-              <Pressable
-                onPress={() => pickImage(false)}
+              <Ionicons name="bulb-outline" size={14} color="rgba(255,255,255,0.4)" />
+              <Text
                 style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 14,
-                  borderCurve: 'continuous',
-                  backgroundColor: 'rgba(255,255,255,0.15)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  fontFamily: Fonts.regular,
+                  fontSize: 12,
+                  color: 'rgba(255,255,255,0.4)',
                 }}
               >
-                <Ionicons name="images" size={24} color={Colors.white} />
-              </Pressable>
-
-              {/* Capture */}
-              <Pressable
-                onPress={() => pickImage(true)}
-                style={({ pressed }) => ({
-                  width: 76,
-                  height: 76,
-                  borderRadius: 38,
-                  backgroundColor: Colors.white,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderWidth: 4,
-                  borderColor: Colors.accent,
-                  opacity: pressed ? 0.9 : 1,
-                  transform: [{ scale: pressed ? 0.95 : 1 }],
-                })}
-              >
-                <Ionicons name="camera" size={32} color={Colors.primaryDark} />
-              </Pressable>
-
-              {/* Placeholder for balance */}
-              <View style={{ width: 52, height: 52 }}>
-                <Text
-                  style={{
-                    fontFamily: Fonts.regular,
-                    fontSize: 11,
-                    color: 'rgba(255,255,255,0.5)',
-                    textAlign: 'center',
-                    marginTop: 14,
-                  }}
-                >
-                  Photo{'\n'}Library
-                </Text>
-              </View>
+                Tip: Use good lighting and focus on a single leaf for best results
+              </Text>
             </View>
           </View>
         </View>

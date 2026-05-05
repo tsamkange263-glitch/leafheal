@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": 1778002809696,
+  "generatedAt": 1778004081263,
   "entries": {
     "HomeScreen@app/(tabs)/index.tsx:68": {
       "element": {
@@ -1161,1106 +1161,6 @@
               "col": 24,
               "endCol": 26,
               "raw": "17"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:237": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 237
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "flex": {
-              "line": 239,
-              "col": 14,
-              "endCol": 15,
-              "raw": "1"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:244": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 244
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "flex": {
-              "line": 244,
-              "col": 29,
-              "endCol": 30,
-              "raw": "1"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:246": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 246
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "paddingHorizontal": {
-              "line": 249,
-              "col": 33,
-              "endCol": 35,
-              "raw": "20"
-            },
-            "flexDirection": {
-              "line": 250,
-              "col": 29,
-              "endCol": 34,
-              "raw": "'row'"
-            },
-            "justifyContent": {
-              "line": 251,
-              "col": 30,
-              "endCol": 45,
-              "raw": "'space-between'"
-            },
-            "alignItems": {
-              "line": 252,
-              "col": 26,
-              "endCol": 34,
-              "raw": "'center'"
-            },
-            "zIndex": {
-              "line": 253,
-              "col": 22,
-              "endCol": 24,
-              "raw": "10"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:256": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 256
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "width": {
-              "line": 259,
-              "col": 23,
-              "endCol": 25,
-              "raw": "40"
-            },
-            "height": {
-              "line": 260,
-              "col": 24,
-              "endCol": 26,
-              "raw": "40"
-            },
-            "borderRadius": {
-              "line": 261,
-              "col": 30,
-              "endCol": 32,
-              "raw": "20"
-            },
-            "backgroundColor": {
-              "line": 262,
-              "col": 33,
-              "endCol": 57,
-              "raw": "'rgba(255,255,255,0.15)'"
-            },
-            "alignItems": {
-              "line": 263,
-              "col": 28,
-              "endCol": 36,
-              "raw": "'center'"
-            },
-            "justifyContent": {
-              "line": 264,
-              "col": 32,
-              "endCol": 40,
-              "raw": "'center'"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:273": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 273
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "flex": {
-              "line": 275,
-              "col": 20,
-              "endCol": 21,
-              "raw": "1"
-            },
-            "alignItems": {
-              "line": 276,
-              "col": 26,
-              "endCol": 34,
-              "raw": "'center'"
-            },
-            "justifyContent": {
-              "line": 277,
-              "col": 30,
-              "endCol": 38,
-              "raw": "'center'"
-            },
-            "paddingHorizontal": {
-              "line": 278,
-              "col": 33,
-              "endCol": 35,
-              "raw": "40"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:282": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 282
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "maxWidth": {
-              "line": 286,
-              "col": 26,
-              "endCol": 29,
-              "raw": "300"
-            },
-            "maxHeight": {
-              "line": 287,
-              "col": 27,
-              "endCol": 30,
-              "raw": "300"
-            },
-            "borderRadius": {
-              "line": 288,
-              "col": 30,
-              "endCol": 32,
-              "raw": "30"
-            },
-            "borderCurve": {
-              "line": 289,
-              "col": 29,
-              "endCol": 41,
-              "raw": "'continuous'"
-            },
-            "borderWidth": {
-              "line": 290,
-              "col": 29,
-              "endCol": 30,
-              "raw": "2"
-            },
-            "borderColor": {
-              "line": 291,
-              "col": 29,
-              "endCol": 51,
-              "raw": "'rgba(139,195,74,0.5)'"
-            },
-            "borderStyle": {
-              "line": 292,
-              "col": 29,
-              "endCol": 37,
-              "raw": "'dashed'"
-            },
-            "alignItems": {
-              "line": 293,
-              "col": 28,
-              "endCol": 36,
-              "raw": "'center'"
-            },
-            "justifyContent": {
-              "line": 294,
-              "col": 32,
-              "endCol": 40,
-              "raw": "'center'"
-            },
-            "gap": {
-              "line": 295,
-              "col": 21,
-              "endCol": 23,
-              "raw": "12"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:299": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 299
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "fontSize": {
-              "line": 302,
-              "col": 28,
-              "endCol": 30,
-              "raw": "14"
-            },
-            "color": {
-              "line": 303,
-              "col": 25,
-              "endCol": 48,
-              "raw": "'rgba(255,255,255,0.6)'"
-            },
-            "textAlign": {
-              "line": 304,
-              "col": 29,
-              "endCol": 37,
-              "raw": "'center'"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:313": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 313
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "paddingHorizontal": {
-              "line": 316,
-              "col": 33,
-              "endCol": 35,
-              "raw": "24"
-            },
-            "gap": {
-              "line": 317,
-              "col": 19,
-              "endCol": 21,
-              "raw": "16"
-            },
-            "alignItems": {
-              "line": 318,
-              "col": 26,
-              "endCol": 34,
-              "raw": "'center'"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:322": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 322
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "flexDirection": {
-              "line": 325,
-              "col": 33,
-              "endCol": 38,
-              "raw": "'row'"
-            },
-            "alignItems": {
-              "line": 326,
-              "col": 30,
-              "endCol": 38,
-              "raw": "'center'"
-            },
-            "gap": {
-              "line": 327,
-              "col": 23,
-              "endCol": 24,
-              "raw": "6"
-            },
-            "backgroundColor": {
-              "line": 328,
-              "col": 35,
-              "endCol": 57,
-              "raw": "'rgba(233,30,99,0.15)'"
-            },
-            "paddingHorizontal": {
-              "line": 329,
-              "col": 37,
-              "endCol": 39,
-              "raw": "16"
-            },
-            "paddingVertical": {
-              "line": 330,
-              "col": 35,
-              "endCol": 36,
-              "raw": "8"
-            },
-            "borderRadius": {
-              "line": 331,
-              "col": 32,
-              "endCol": 34,
-              "raw": "20"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:335": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 335
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "fontSize": {
-              "line": 338,
-              "col": 30,
-              "endCol": 32,
-              "raw": "13"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:347": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 347
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "flexDirection": {
-              "line": 349,
-              "col": 31,
-              "endCol": 36,
-              "raw": "'row'"
-            },
-            "alignItems": {
-              "line": 350,
-              "col": 28,
-              "endCol": 36,
-              "raw": "'center'"
-            },
-            "justifyContent": {
-              "line": 351,
-              "col": 32,
-              "endCol": 40,
-              "raw": "'center'"
-            },
-            "gap": {
-              "line": 352,
-              "col": 21,
-              "endCol": 23,
-              "raw": "40"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:356": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 356
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "width": {
-              "line": 359,
-              "col": 25,
-              "endCol": 27,
-              "raw": "52"
-            },
-            "height": {
-              "line": 360,
-              "col": 26,
-              "endCol": 28,
-              "raw": "52"
-            },
-            "borderRadius": {
-              "line": 361,
-              "col": 32,
-              "endCol": 34,
-              "raw": "14"
-            },
-            "borderCurve": {
-              "line": 362,
-              "col": 31,
-              "endCol": 43,
-              "raw": "'continuous'"
-            },
-            "backgroundColor": {
-              "line": 363,
-              "col": 35,
-              "endCol": 59,
-              "raw": "'rgba(255,255,255,0.15)'"
-            },
-            "alignItems": {
-              "line": 364,
-              "col": 30,
-              "endCol": 38,
-              "raw": "'center'"
-            },
-            "justifyContent": {
-              "line": 365,
-              "col": 34,
-              "endCol": 42,
-              "raw": "'center'"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:372": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 372
-      },
-      "styles": [
-        {
-          "origin": "dynamic",
-          "resolvable": false
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:391": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 391
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "width": {
-              "line": 391,
-              "col": 36,
-              "endCol": 38,
-              "raw": "52"
-            },
-            "height": {
-              "line": 391,
-              "col": 48,
-              "endCol": 50,
-              "raw": "52"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:392": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 392
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "fontSize": {
-              "line": 395,
-              "col": 30,
-              "endCol": 32,
-              "raw": "11"
-            },
-            "color": {
-              "line": 396,
-              "col": 27,
-              "endCol": 50,
-              "raw": "'rgba(255,255,255,0.5)'"
-            },
-            "textAlign": {
-              "line": 397,
-              "col": 31,
-              "endCol": 39,
-              "raw": "'center'"
-            },
-            "marginTop": {
-              "line": 398,
-              "col": 31,
-              "endCol": 33,
-              "raw": "14"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:410": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 410
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "flex": {
-              "line": 410,
-              "col": 29,
-              "endCol": 30,
-              "raw": "1"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:412": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 412
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "paddingHorizontal": {
-              "line": 415,
-              "col": 33,
-              "endCol": 35,
-              "raw": "20"
-            },
-            "flexDirection": {
-              "line": 416,
-              "col": 29,
-              "endCol": 34,
-              "raw": "'row'"
-            },
-            "justifyContent": {
-              "line": 417,
-              "col": 30,
-              "endCol": 45,
-              "raw": "'space-between'"
-            },
-            "alignItems": {
-              "line": 418,
-              "col": 26,
-              "endCol": 34,
-              "raw": "'center'"
-            },
-            "position": {
-              "line": 419,
-              "col": 24,
-              "endCol": 34,
-              "raw": "'absolute'"
-            },
-            "top": {
-              "line": 420,
-              "col": 19,
-              "endCol": 20,
-              "raw": "0"
-            },
-            "left": {
-              "line": 421,
-              "col": 20,
-              "endCol": 21,
-              "raw": "0"
-            },
-            "right": {
-              "line": 422,
-              "col": 21,
-              "endCol": 22,
-              "raw": "0"
-            },
-            "zIndex": {
-              "line": 423,
-              "col": 22,
-              "endCol": 24,
-              "raw": "10"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:426": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 426
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "width": {
-              "line": 433,
-              "col": 23,
-              "endCol": 25,
-              "raw": "40"
-            },
-            "height": {
-              "line": 434,
-              "col": 24,
-              "endCol": 26,
-              "raw": "40"
-            },
-            "borderRadius": {
-              "line": 435,
-              "col": 30,
-              "endCol": 32,
-              "raw": "20"
-            },
-            "backgroundColor": {
-              "line": 436,
-              "col": 33,
-              "endCol": 50,
-              "raw": "'rgba(0,0,0,0.4)'"
-            },
-            "alignItems": {
-              "line": 437,
-              "col": 28,
-              "endCol": 36,
-              "raw": "'center'"
-            },
-            "justifyContent": {
-              "line": 438,
-              "col": 32,
-              "endCol": 40,
-              "raw": "'center'"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:447": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 447
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "flex": {
-              "line": 449,
-              "col": 27,
-              "endCol": 28,
-              "raw": "1"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:454": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 454
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "position": {
-              "line": 456,
-              "col": 24,
-              "endCol": 34,
-              "raw": "'absolute'"
-            },
-            "bottom": {
-              "line": 457,
-              "col": 22,
-              "endCol": 23,
-              "raw": "0"
-            },
-            "left": {
-              "line": 458,
-              "col": 20,
-              "endCol": 21,
-              "raw": "0"
-            },
-            "right": {
-              "line": 459,
-              "col": 21,
-              "endCol": 22,
-              "raw": "0"
-            },
-            "paddingHorizontal": {
-              "line": 461,
-              "col": 33,
-              "endCol": 35,
-              "raw": "24"
-            },
-            "paddingTop": {
-              "line": 462,
-              "col": 26,
-              "endCol": 28,
-              "raw": "40"
-            },
-            "gap": {
-              "line": 463,
-              "col": 19,
-              "endCol": 21,
-              "raw": "12"
-            },
-            "backgroundColor": {
-              "line": 464,
-              "col": 31,
-              "endCol": 48,
-              "raw": "'rgba(0,0,0,0.6)'"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:467": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 467
-      },
-      "styles": [
-        {
-          "origin": "dynamic",
-          "resolvable": false
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:482": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 482
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "fontSize": {
-              "line": 485,
-              "col": 28,
-              "endCol": 30,
-              "raw": "17"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:492": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 492
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "paddingVertical": {
-              "line": 499,
-              "col": 33,
-              "endCol": 35,
-              "raw": "12"
-            },
-            "alignItems": {
-              "line": 500,
-              "col": 28,
-              "endCol": 36,
-              "raw": "'center'"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:503": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 503
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "fontSize": {
-              "line": 506,
-              "col": 28,
-              "endCol": 30,
-              "raw": "15"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:518": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 518
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "flex": {
-              "line": 520,
-              "col": 18,
-              "endCol": 19,
-              "raw": "1"
-            },
-            "alignItems": {
-              "line": 521,
-              "col": 24,
-              "endCol": 32,
-              "raw": "'center'"
-            },
-            "justifyContent": {
-              "line": 522,
-              "col": 28,
-              "endCol": 36,
-              "raw": "'center'"
-            },
-            "paddingHorizontal": {
-              "line": 523,
-              "col": 31,
-              "endCol": 33,
-              "raw": "40"
-            },
-            "gap": {
-              "line": 524,
-              "col": 17,
-              "endCol": 19,
-              "raw": "20"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:528": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 528
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "width": {
-              "line": 530,
-              "col": 23,
-              "endCol": 26,
-              "raw": "100"
-            },
-            "height": {
-              "line": 531,
-              "col": 24,
-              "endCol": 27,
-              "raw": "100"
-            },
-            "borderRadius": {
-              "line": 532,
-              "col": 30,
-              "endCol": 32,
-              "raw": "50"
-            },
-            "backgroundColor": {
-              "line": 533,
-              "col": 33,
-              "endCol": 56,
-              "raw": "'rgba(139,195,74,0.15)'"
-            },
-            "alignItems": {
-              "line": 534,
-              "col": 28,
-              "endCol": 36,
-              "raw": "'center'"
-            },
-            "justifyContent": {
-              "line": 535,
-              "col": 32,
-              "endCol": 40,
-              "raw": "'center'"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:541": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 541
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "fontSize": {
-              "line": 545,
-              "col": 24,
-              "endCol": 26,
-              "raw": "20"
-            },
-            "textAlign": {
-              "line": 547,
-              "col": 25,
-              "endCol": 33,
-              "raw": "'center'"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:552": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 552
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "fontSize": {
-              "line": 556,
-              "col": 24,
-              "endCol": 26,
-              "raw": "14"
-            },
-            "color": {
-              "line": 557,
-              "col": 21,
-              "endCol": 44,
-              "raw": "'rgba(255,255,255,0.6)'"
-            },
-            "textAlign": {
-              "line": 558,
-              "col": 25,
-              "endCol": 33,
-              "raw": "'center'"
-            },
-            "lineHeight": {
-              "line": 559,
-              "col": 26,
-              "endCol": 28,
-              "raw": "20"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:566": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 566
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "width": {
-              "line": 569,
-              "col": 23,
-              "endCol": 26,
-              "raw": "120"
-            },
-            "height": {
-              "line": 570,
-              "col": 24,
-              "endCol": 27,
-              "raw": "120"
-            },
-            "borderRadius": {
-              "line": 571,
-              "col": 30,
-              "endCol": 32,
-              "raw": "20"
-            },
-            "borderCurve": {
-              "line": 572,
-              "col": 29,
-              "endCol": 41,
-              "raw": "'continuous'"
-            },
-            "overflow": {
-              "line": 573,
-              "col": 26,
-              "endCol": 34,
-              "raw": "'hidden'"
-            },
-            "marginTop": {
-              "line": 574,
-              "col": 27,
-              "endCol": 29,
-              "raw": "12"
-            },
-            "borderWidth": {
-              "line": 575,
-              "col": 29,
-              "endCol": 30,
-              "raw": "2"
-            },
-            "borderColor": {
-              "line": 576,
-              "col": 29,
-              "endCol": 51,
-              "raw": "'rgba(139,195,74,0.3)'"
-            }
-          }
-        }
-      ]
-    },
-    "ScanScreen@app/scan.tsx:579": {
-      "element": {
-        "file": "app/scan.tsx",
-        "line": 579
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/scan.tsx",
-          "properties": {
-            "width": {
-              "line": 581,
-              "col": 32,
-              "endCol": 38,
-              "raw": "'100%'"
-            },
-            "height": {
-              "line": 581,
-              "col": 48,
-              "endCol": 54,
-              "raw": "'100%'"
             }
           }
         }
@@ -8667,6 +7567,1366 @@
               "col": 24,
               "endCol": 26,
               "raw": "13"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:245": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 245
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "flex": {
+              "line": 247,
+              "col": 14,
+              "endCol": 15,
+              "raw": "1"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:252": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 252
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "flex": {
+              "line": 252,
+              "col": 29,
+              "endCol": 30,
+              "raw": "1"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:254": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 254
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "paddingHorizontal": {
+              "line": 257,
+              "col": 33,
+              "endCol": 35,
+              "raw": "20"
+            },
+            "flexDirection": {
+              "line": 258,
+              "col": 29,
+              "endCol": 34,
+              "raw": "'row'"
+            },
+            "justifyContent": {
+              "line": 259,
+              "col": 30,
+              "endCol": 45,
+              "raw": "'space-between'"
+            },
+            "alignItems": {
+              "line": 260,
+              "col": 26,
+              "endCol": 34,
+              "raw": "'center'"
+            },
+            "zIndex": {
+              "line": 261,
+              "col": 22,
+              "endCol": 24,
+              "raw": "10"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:264": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 264
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "width": {
+              "line": 267,
+              "col": 23,
+              "endCol": 25,
+              "raw": "40"
+            },
+            "height": {
+              "line": 268,
+              "col": 24,
+              "endCol": 26,
+              "raw": "40"
+            },
+            "borderRadius": {
+              "line": 269,
+              "col": 30,
+              "endCol": 32,
+              "raw": "20"
+            },
+            "backgroundColor": {
+              "line": 270,
+              "col": 33,
+              "endCol": 57,
+              "raw": "'rgba(255,255,255,0.15)'"
+            },
+            "alignItems": {
+              "line": 271,
+              "col": 28,
+              "endCol": 36,
+              "raw": "'center'"
+            },
+            "justifyContent": {
+              "line": 272,
+              "col": 32,
+              "endCol": 40,
+              "raw": "'center'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:281": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 281
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "paddingHorizontal": {
+              "line": 283,
+              "col": 33,
+              "endCol": 35,
+              "raw": "24"
+            },
+            "paddingTop": {
+              "line": 284,
+              "col": 26,
+              "endCol": 28,
+              "raw": "32"
+            },
+            "alignItems": {
+              "line": 285,
+              "col": 26,
+              "endCol": 34,
+              "raw": "'center'"
+            },
+            "gap": {
+              "line": 286,
+              "col": 19,
+              "endCol": 20,
+              "raw": "8"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:290": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 290
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "width": {
+              "line": 292,
+              "col": 25,
+              "endCol": 27,
+              "raw": "72"
+            },
+            "height": {
+              "line": 293,
+              "col": 26,
+              "endCol": 28,
+              "raw": "72"
+            },
+            "borderRadius": {
+              "line": 294,
+              "col": 32,
+              "endCol": 34,
+              "raw": "36"
+            },
+            "backgroundColor": {
+              "line": 295,
+              "col": 35,
+              "endCol": 58,
+              "raw": "'rgba(139,195,74,0.12)'"
+            },
+            "alignItems": {
+              "line": 296,
+              "col": 30,
+              "endCol": 38,
+              "raw": "'center'"
+            },
+            "justifyContent": {
+              "line": 297,
+              "col": 34,
+              "endCol": 42,
+              "raw": "'center'"
+            },
+            "marginBottom": {
+              "line": 298,
+              "col": 32,
+              "endCol": 33,
+              "raw": "8"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:304": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 304
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 308,
+              "col": 26,
+              "endCol": 28,
+              "raw": "24"
+            },
+            "textAlign": {
+              "line": 310,
+              "col": 27,
+              "endCol": 35,
+              "raw": "'center'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:315": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 315
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 319,
+              "col": 26,
+              "endCol": 28,
+              "raw": "15"
+            },
+            "color": {
+              "line": 320,
+              "col": 23,
+              "endCol": 46,
+              "raw": "'rgba(255,255,255,0.6)'"
+            },
+            "textAlign": {
+              "line": 321,
+              "col": 27,
+              "endCol": 35,
+              "raw": "'center'"
+            },
+            "lineHeight": {
+              "line": 322,
+              "col": 28,
+              "endCol": 30,
+              "raw": "22"
+            },
+            "maxWidth": {
+              "line": 323,
+              "col": 26,
+              "endCol": 29,
+              "raw": "280"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:331": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 331
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "flex": {
+              "line": 333,
+              "col": 20,
+              "endCol": 21,
+              "raw": "1"
+            },
+            "justifyContent": {
+              "line": 334,
+              "col": 30,
+              "endCol": 38,
+              "raw": "'center'"
+            },
+            "paddingHorizontal": {
+              "line": 335,
+              "col": 33,
+              "endCol": 35,
+              "raw": "24"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:338": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 338
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "flexDirection": {
+              "line": 341,
+              "col": 31,
+              "endCol": 36,
+              "raw": "'row'"
+            },
+            "gap": {
+              "line": 342,
+              "col": 21,
+              "endCol": 23,
+              "raw": "14"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:346": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 346
+      },
+      "styles": [
+        {
+          "origin": "dynamic",
+          "resolvable": false
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:362": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 362
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "width": {
+              "line": 364,
+              "col": 27,
+              "endCol": 29,
+              "raw": "64"
+            },
+            "height": {
+              "line": 365,
+              "col": 28,
+              "endCol": 30,
+              "raw": "64"
+            },
+            "borderRadius": {
+              "line": 366,
+              "col": 34,
+              "endCol": 36,
+              "raw": "32"
+            },
+            "alignItems": {
+              "line": 368,
+              "col": 32,
+              "endCol": 40,
+              "raw": "'center'"
+            },
+            "justifyContent": {
+              "line": 369,
+              "col": 36,
+              "endCol": 44,
+              "raw": "'center'"
+            },
+            "boxShadow": {
+              "line": 370,
+              "col": 31,
+              "endCol": 64,
+              "raw": "'0 4px 16px rgba(139,195,74,0.4)'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:375": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 375
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 378,
+              "col": 30,
+              "endCol": 32,
+              "raw": "16"
+            },
+            "textAlign": {
+              "line": 380,
+              "col": 31,
+              "endCol": 39,
+              "raw": "'center'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:385": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 385
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 388,
+              "col": 30,
+              "endCol": 32,
+              "raw": "12"
+            },
+            "color": {
+              "line": 389,
+              "col": 27,
+              "endCol": 51,
+              "raw": "'rgba(255,255,255,0.55)'"
+            },
+            "textAlign": {
+              "line": 390,
+              "col": 31,
+              "endCol": 39,
+              "raw": "'center'"
+            },
+            "lineHeight": {
+              "line": 391,
+              "col": 32,
+              "endCol": 34,
+              "raw": "17"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:399": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 399
+      },
+      "styles": [
+        {
+          "origin": "dynamic",
+          "resolvable": false
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:415": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 415
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "width": {
+              "line": 417,
+              "col": 27,
+              "endCol": 29,
+              "raw": "64"
+            },
+            "height": {
+              "line": 418,
+              "col": 28,
+              "endCol": 30,
+              "raw": "64"
+            },
+            "borderRadius": {
+              "line": 419,
+              "col": 34,
+              "endCol": 36,
+              "raw": "32"
+            },
+            "backgroundColor": {
+              "line": 420,
+              "col": 37,
+              "endCol": 61,
+              "raw": "'rgba(255,255,255,0.15)'"
+            },
+            "alignItems": {
+              "line": 421,
+              "col": 32,
+              "endCol": 40,
+              "raw": "'center'"
+            },
+            "justifyContent": {
+              "line": 422,
+              "col": 36,
+              "endCol": 44,
+              "raw": "'center'"
+            },
+            "borderWidth": {
+              "line": 423,
+              "col": 33,
+              "endCol": 36,
+              "raw": "1.5"
+            },
+            "borderColor": {
+              "line": 424,
+              "col": 33,
+              "endCol": 56,
+              "raw": "'rgba(255,255,255,0.2)'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:429": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 429
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 432,
+              "col": 30,
+              "endCol": 32,
+              "raw": "16"
+            },
+            "textAlign": {
+              "line": 434,
+              "col": 31,
+              "endCol": 39,
+              "raw": "'center'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:439": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 439
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 442,
+              "col": 30,
+              "endCol": 32,
+              "raw": "12"
+            },
+            "color": {
+              "line": 443,
+              "col": 27,
+              "endCol": 51,
+              "raw": "'rgba(255,255,255,0.55)'"
+            },
+            "textAlign": {
+              "line": 444,
+              "col": 31,
+              "endCol": 39,
+              "raw": "'center'"
+            },
+            "lineHeight": {
+              "line": 445,
+              "col": 32,
+              "endCol": 34,
+              "raw": "17"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:455": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 455
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "paddingHorizontal": {
+              "line": 458,
+              "col": 33,
+              "endCol": 35,
+              "raw": "24"
+            },
+            "gap": {
+              "line": 459,
+              "col": 19,
+              "endCol": 21,
+              "raw": "14"
+            },
+            "alignItems": {
+              "line": 460,
+              "col": 26,
+              "endCol": 34,
+              "raw": "'center'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:464": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 464
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "flexDirection": {
+              "line": 467,
+              "col": 33,
+              "endCol": 38,
+              "raw": "'row'"
+            },
+            "alignItems": {
+              "line": 468,
+              "col": 30,
+              "endCol": 38,
+              "raw": "'center'"
+            },
+            "gap": {
+              "line": 469,
+              "col": 23,
+              "endCol": 24,
+              "raw": "6"
+            },
+            "backgroundColor": {
+              "line": 470,
+              "col": 35,
+              "endCol": 57,
+              "raw": "'rgba(233,30,99,0.15)'"
+            },
+            "paddingHorizontal": {
+              "line": 471,
+              "col": 37,
+              "endCol": 39,
+              "raw": "16"
+            },
+            "paddingVertical": {
+              "line": 472,
+              "col": 35,
+              "endCol": 37,
+              "raw": "10"
+            },
+            "borderRadius": {
+              "line": 473,
+              "col": 32,
+              "endCol": 34,
+              "raw": "20"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:477": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 477
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 480,
+              "col": 30,
+              "endCol": 32,
+              "raw": "13"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:490": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 490
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "flexDirection": {
+              "line": 492,
+              "col": 31,
+              "endCol": 36,
+              "raw": "'row'"
+            },
+            "alignItems": {
+              "line": 493,
+              "col": 28,
+              "endCol": 36,
+              "raw": "'center'"
+            },
+            "gap": {
+              "line": 494,
+              "col": 21,
+              "endCol": 22,
+              "raw": "6"
+            },
+            "paddingHorizontal": {
+              "line": 495,
+              "col": 35,
+              "endCol": 37,
+              "raw": "12"
+            },
+            "paddingVertical": {
+              "line": 496,
+              "col": 33,
+              "endCol": 34,
+              "raw": "8"
+            },
+            "backgroundColor": {
+              "line": 497,
+              "col": 33,
+              "endCol": 57,
+              "raw": "'rgba(255,255,255,0.06)'"
+            },
+            "borderRadius": {
+              "line": 498,
+              "col": 30,
+              "endCol": 32,
+              "raw": "12"
+            },
+            "borderCurve": {
+              "line": 499,
+              "col": 29,
+              "endCol": 41,
+              "raw": "'continuous'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:503": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 503
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 506,
+              "col": 28,
+              "endCol": 30,
+              "raw": "12"
+            },
+            "color": {
+              "line": 507,
+              "col": 25,
+              "endCol": 48,
+              "raw": "'rgba(255,255,255,0.4)'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:518": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 518
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "flex": {
+              "line": 518,
+              "col": 29,
+              "endCol": 30,
+              "raw": "1"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:520": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 520
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "paddingHorizontal": {
+              "line": 523,
+              "col": 33,
+              "endCol": 35,
+              "raw": "20"
+            },
+            "flexDirection": {
+              "line": 524,
+              "col": 29,
+              "endCol": 34,
+              "raw": "'row'"
+            },
+            "justifyContent": {
+              "line": 525,
+              "col": 30,
+              "endCol": 45,
+              "raw": "'space-between'"
+            },
+            "alignItems": {
+              "line": 526,
+              "col": 26,
+              "endCol": 34,
+              "raw": "'center'"
+            },
+            "position": {
+              "line": 527,
+              "col": 24,
+              "endCol": 34,
+              "raw": "'absolute'"
+            },
+            "top": {
+              "line": 528,
+              "col": 19,
+              "endCol": 20,
+              "raw": "0"
+            },
+            "left": {
+              "line": 529,
+              "col": 20,
+              "endCol": 21,
+              "raw": "0"
+            },
+            "right": {
+              "line": 530,
+              "col": 21,
+              "endCol": 22,
+              "raw": "0"
+            },
+            "zIndex": {
+              "line": 531,
+              "col": 22,
+              "endCol": 24,
+              "raw": "10"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:534": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 534
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "width": {
+              "line": 541,
+              "col": 23,
+              "endCol": 25,
+              "raw": "40"
+            },
+            "height": {
+              "line": 542,
+              "col": 24,
+              "endCol": 26,
+              "raw": "40"
+            },
+            "borderRadius": {
+              "line": 543,
+              "col": 30,
+              "endCol": 32,
+              "raw": "20"
+            },
+            "backgroundColor": {
+              "line": 544,
+              "col": 33,
+              "endCol": 50,
+              "raw": "'rgba(0,0,0,0.4)'"
+            },
+            "alignItems": {
+              "line": 545,
+              "col": 28,
+              "endCol": 36,
+              "raw": "'center'"
+            },
+            "justifyContent": {
+              "line": 546,
+              "col": 32,
+              "endCol": 40,
+              "raw": "'center'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:555": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 555
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "flex": {
+              "line": 557,
+              "col": 27,
+              "endCol": 28,
+              "raw": "1"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:562": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 562
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "position": {
+              "line": 564,
+              "col": 24,
+              "endCol": 34,
+              "raw": "'absolute'"
+            },
+            "bottom": {
+              "line": 565,
+              "col": 22,
+              "endCol": 23,
+              "raw": "0"
+            },
+            "left": {
+              "line": 566,
+              "col": 20,
+              "endCol": 21,
+              "raw": "0"
+            },
+            "right": {
+              "line": 567,
+              "col": 21,
+              "endCol": 22,
+              "raw": "0"
+            },
+            "paddingHorizontal": {
+              "line": 569,
+              "col": 33,
+              "endCol": 35,
+              "raw": "24"
+            },
+            "paddingTop": {
+              "line": 570,
+              "col": 26,
+              "endCol": 28,
+              "raw": "40"
+            },
+            "gap": {
+              "line": 571,
+              "col": 19,
+              "endCol": 21,
+              "raw": "12"
+            },
+            "backgroundColor": {
+              "line": 572,
+              "col": 31,
+              "endCol": 48,
+              "raw": "'rgba(0,0,0,0.6)'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:575": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 575
+      },
+      "styles": [
+        {
+          "origin": "dynamic",
+          "resolvable": false
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:590": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 590
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 593,
+              "col": 28,
+              "endCol": 30,
+              "raw": "17"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:600": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 600
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "paddingVertical": {
+              "line": 607,
+              "col": 33,
+              "endCol": 35,
+              "raw": "12"
+            },
+            "alignItems": {
+              "line": 608,
+              "col": 28,
+              "endCol": 36,
+              "raw": "'center'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:611": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 611
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 614,
+              "col": 28,
+              "endCol": 30,
+              "raw": "15"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:626": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 626
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "flex": {
+              "line": 628,
+              "col": 18,
+              "endCol": 19,
+              "raw": "1"
+            },
+            "alignItems": {
+              "line": 629,
+              "col": 24,
+              "endCol": 32,
+              "raw": "'center'"
+            },
+            "justifyContent": {
+              "line": 630,
+              "col": 28,
+              "endCol": 36,
+              "raw": "'center'"
+            },
+            "paddingHorizontal": {
+              "line": 631,
+              "col": 31,
+              "endCol": 33,
+              "raw": "40"
+            },
+            "gap": {
+              "line": 632,
+              "col": 17,
+              "endCol": 19,
+              "raw": "20"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:636": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 636
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "width": {
+              "line": 638,
+              "col": 23,
+              "endCol": 26,
+              "raw": "100"
+            },
+            "height": {
+              "line": 639,
+              "col": 24,
+              "endCol": 27,
+              "raw": "100"
+            },
+            "borderRadius": {
+              "line": 640,
+              "col": 30,
+              "endCol": 32,
+              "raw": "50"
+            },
+            "backgroundColor": {
+              "line": 641,
+              "col": 33,
+              "endCol": 56,
+              "raw": "'rgba(139,195,74,0.15)'"
+            },
+            "alignItems": {
+              "line": 642,
+              "col": 28,
+              "endCol": 36,
+              "raw": "'center'"
+            },
+            "justifyContent": {
+              "line": 643,
+              "col": 32,
+              "endCol": 40,
+              "raw": "'center'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:649": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 649
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 653,
+              "col": 24,
+              "endCol": 26,
+              "raw": "20"
+            },
+            "textAlign": {
+              "line": 655,
+              "col": 25,
+              "endCol": 33,
+              "raw": "'center'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:660": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 660
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "fontSize": {
+              "line": 664,
+              "col": 24,
+              "endCol": 26,
+              "raw": "14"
+            },
+            "color": {
+              "line": 665,
+              "col": 21,
+              "endCol": 44,
+              "raw": "'rgba(255,255,255,0.6)'"
+            },
+            "textAlign": {
+              "line": 666,
+              "col": 25,
+              "endCol": 33,
+              "raw": "'center'"
+            },
+            "lineHeight": {
+              "line": 667,
+              "col": 26,
+              "endCol": 28,
+              "raw": "20"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:674": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 674
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "width": {
+              "line": 677,
+              "col": 23,
+              "endCol": 26,
+              "raw": "120"
+            },
+            "height": {
+              "line": 678,
+              "col": 24,
+              "endCol": 27,
+              "raw": "120"
+            },
+            "borderRadius": {
+              "line": 679,
+              "col": 30,
+              "endCol": 32,
+              "raw": "20"
+            },
+            "borderCurve": {
+              "line": 680,
+              "col": 29,
+              "endCol": 41,
+              "raw": "'continuous'"
+            },
+            "overflow": {
+              "line": 681,
+              "col": 26,
+              "endCol": 34,
+              "raw": "'hidden'"
+            },
+            "marginTop": {
+              "line": 682,
+              "col": 27,
+              "endCol": 29,
+              "raw": "12"
+            },
+            "borderWidth": {
+              "line": 683,
+              "col": 29,
+              "endCol": 30,
+              "raw": "2"
+            },
+            "borderColor": {
+              "line": 684,
+              "col": 29,
+              "endCol": 51,
+              "raw": "'rgba(139,195,74,0.3)'"
+            }
+          }
+        }
+      ]
+    },
+    "ScanScreen@app/scan.tsx:687": {
+      "element": {
+        "file": "app/scan.tsx",
+        "line": 687
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/scan.tsx",
+          "properties": {
+            "width": {
+              "line": 689,
+              "col": 32,
+              "endCol": 38,
+              "raw": "'100%'"
+            },
+            "height": {
+              "line": 689,
+              "col": 48,
+              "endCol": 54,
+              "raw": "'100%'"
             }
           }
         }
