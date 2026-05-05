@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,9 +16,23 @@ import { Fonts } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
+import {
+  validateZimPhone,
+  generateTransactionRef,
+  sendEcoCashPayment,
+  pollTransaction,
+  isPaymentPaid,
+  isPaymentPending,
+  isPaymentFailed,
+} from '@/lib/paynow';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 type PaymentStatus = 'idle' | 'processing' | 'polling' | 'success' | 'failed';
+
+const PAYMENT_AMOUNT_USD = 1.0;
+const SCANS_PER_TOPUP = 12;
+const POLL_INTERVAL_MS = 5000;
+const MAX_POLL_ATTEMPTS = 12; // 12 * 5s = 60 seconds max
 
 export default function TopUpScreen() {
   const router = useRouter();
@@ -28,21 +42,129 @@ export default function TopUpScreen() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [status, setStatus] = useState<PaymentStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollAttemptsRef = useRef(0);
+  const isCancelledRef = useRef(false);
 
   const credits = profile?.scan_credits ?? 0;
 
-  const validatePhone = (phone: string): boolean => {
-    const cleaned = phone.replace(/\s/g, '');
-    return /^07\d{8}$/.test(cleaned);
-  };
+  const cleanupPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    isCancelledRef.current = true;
+  }, []);
+
+  const startPolling = useCallback(
+    async (pollUrl: string, paymentId: string) => {
+      pollAttemptsRef.current = 0;
+      isCancelledRef.current = false;
+
+      const onPaymentConfirmed = async () => {
+        if (!user?.id) return;
+        try {
+          await supabase
+            .from('payments')
+            .update({ status: 'success' })
+            .eq('id', paymentId);
+
+          const newCredits = credits + SCANS_PER_TOPUP;
+          await supabase
+            .from('users')
+            .update({ scan_credits: newCredits })
+            .eq('id', user.id);
+          updateCredits(newCredits);
+
+          setStatus('success');
+        } catch (e) {
+          console.error('Success handling error:', e);
+          // Payment was successful but credits update failed - still show success
+          setStatus('success');
+        }
+      };
+
+      const poll = async () => {
+        if (isCancelledRef.current) return;
+
+        pollAttemptsRef.current += 1;
+
+        try {
+          const result = await pollTransaction(pollUrl);
+
+          if (isCancelledRef.current) return;
+
+          if (isPaymentPaid(result)) {
+            await onPaymentConfirmed();
+            return;
+          }
+
+          if (isPaymentFailed(result)) {
+            await supabase
+              .from('payments')
+              .update({ status: 'failed' })
+              .eq('id', paymentId);
+            setStatus('failed');
+            setErrorMsg(
+              'Payment was declined or cancelled. Please try again.'
+            );
+            return;
+          }
+
+          if (isPaymentPending(result)) {
+            if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
+              await supabase
+                .from('payments')
+                .update({ status: 'timeout' })
+                .eq('id', paymentId);
+              setStatus('failed');
+              setErrorMsg(
+                'Payment confirmation timed out. If you completed the payment, credits will be added shortly. Contact support if needed.'
+              );
+              return;
+            }
+
+            pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+            return;
+          }
+
+          // Unknown status - keep polling until max attempts
+          if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
+            setStatus('failed');
+            setErrorMsg(
+              `Unexpected payment status: "${result.status}". Please contact support.`
+            );
+            return;
+          }
+          pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+        } catch (e) {
+          console.error('Poll error:', e);
+          if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
+            setStatus('failed');
+            setErrorMsg(
+              'Could not verify payment status. If you completed the payment, credits will be added shortly.'
+            );
+            return;
+          }
+          pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+        }
+      };
+
+      // Start first poll
+      poll();
+    },
+    [credits, user?.id, updateCredits]
+  );
 
   const handlePayment = async () => {
     if (!user?.id) return;
 
-    if (!validatePhone(phoneNumber)) {
+    const cleanedPhone = phoneNumber.replace(/[\s\-()]/g, '');
+
+    if (!validateZimPhone(cleanedPhone)) {
       Alert.alert(
         'Invalid Number',
-        'Please enter a valid EcoCash number in format: 07XXXXXXXX'
+        'Please enter a valid EcoCash number in format: 07XXXXXXXX or 263XXXXXXXXX'
       );
       return;
     }
@@ -50,52 +172,59 @@ export default function TopUpScreen() {
     setStatus('processing');
     setErrorMsg('');
 
+    const reference = generateTransactionRef();
+
     try {
-      // Create payment record
+      // Create payment record in database first
       const { data: payment, error: insertErr } = await supabase
         .from('payments')
         .insert({
           user_id: user.id,
-          ecocash_number: phoneNumber.replace(/\s/g, ''),
-          amount_usd: 1.0,
-          scans_added: 12,
+          ecocash_number: cleanedPhone,
+          amount_usd: PAYMENT_AMOUNT_USD,
+          scans_added: SCANS_PER_TOPUP,
           status: 'pending',
-          paynow_reference: `HERB-${Date.now()}`,
+          paynow_reference: reference,
         })
         .select()
         .single();
 
       if (insertErr) throw insertErr;
 
-      // Simulate USSD push polling
+      // Send EcoCash payment request to Paynow
+      const paynowResponse = await sendEcoCashPayment(
+        PAYMENT_AMOUNT_USD,
+        cleanedPhone,
+        reference
+      );
+
+      // Update payment record with poll URL for tracking
+      if (paynowResponse.pollurl) {
+        await supabase
+          .from('payments')
+          .update({
+            status: 'sent',
+            paynow_reference: paynowResponse.browserurl || reference,
+          })
+          .eq('id', payment.id);
+      }
+
+      // Payment request sent successfully - start polling
       setStatus('polling');
-
-      // Simulate payment confirmation after delay (in production, poll Paynow API)
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      // Update payment status to success
-      await supabase
-        .from('payments')
-        .update({ status: 'success' })
-        .eq('id', payment.id);
-
-      // Add credits
-      const newCredits = credits + 12;
-      await supabase
-        .from('users')
-        .update({ scan_credits: newCredits })
-        .eq('id', user.id);
-      updateCredits(newCredits);
-
-      setStatus('success');
+      startPolling(paynowResponse.pollurl!, payment.id);
     } catch (e: unknown) {
-      console.error('Payment error:', e);
+      console.error('Payment initiation error:', e);
       setStatus('failed');
-      setErrorMsg(e instanceof Error ? e.message : 'Payment failed. Please try again.');
+      setErrorMsg(
+        e instanceof Error
+          ? e.message
+          : 'Failed to initiate payment. Please check your number and try again.'
+      );
     }
   };
 
   const handleRetry = () => {
+    cleanupPolling();
     setStatus('idle');
     setErrorMsg('');
   };
@@ -121,7 +250,10 @@ export default function TopUpScreen() {
         }}
       >
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => {
+            cleanupPolling();
+            router.back();
+          }}
           style={{
             width: 40,
             height: 40,
@@ -270,7 +402,7 @@ export default function TopUpScreen() {
                 placeholder="07XXXXXXXX"
                 placeholderTextColor={Colors.textLight}
                 keyboardType="phone-pad"
-                maxLength={10}
+                maxLength={12}
                 style={{
                   flex: 1,
                   fontFamily: Fonts.semiBold,
@@ -282,9 +414,17 @@ export default function TopUpScreen() {
               />
               {phoneNumber.length > 0 && (
                 <Ionicons
-                  name={validatePhone(phoneNumber) ? 'checkmark-circle' : 'close-circle'}
+                  name={
+                    validateZimPhone(phoneNumber.replace(/[\s\-()]/g, ''))
+                      ? 'checkmark-circle'
+                      : 'close-circle'
+                  }
                   size={22}
-                  color={validatePhone(phoneNumber) ? Colors.success : Colors.error}
+                  color={
+                    validateZimPhone(phoneNumber.replace(/[\s\-()]/g, ''))
+                      ? Colors.success
+                      : Colors.error
+                  }
                 />
               )}
             </View>
@@ -296,7 +436,7 @@ export default function TopUpScreen() {
                 marginLeft: 4,
               }}
             >
-              {"You'll receive a USSD push on this number to confirm"}
+              {"You'll receive a USSD push on this number to confirm payment"}
             </Text>
           </Animated.View>
 
@@ -304,7 +444,7 @@ export default function TopUpScreen() {
           <Animated.View entering={FadeInDown.delay(200).duration(500)}>
             <Pressable
               onPress={handlePayment}
-              disabled={!validatePhone(phoneNumber)}
+              disabled={!validateZimPhone(phoneNumber.replace(/[\s\-()]/g, ''))}
               style={({ pressed }) => ({
                 backgroundColor: Colors.ecocash,
                 paddingVertical: 18,
@@ -315,7 +455,7 @@ export default function TopUpScreen() {
                 flexDirection: 'row',
                 gap: 8,
                 marginTop: 20,
-                opacity: validatePhone(phoneNumber)
+                opacity: validateZimPhone(phoneNumber.replace(/[\s\-()]/g, ''))
                   ? pressed
                     ? 0.9
                     : 1
@@ -349,7 +489,7 @@ export default function TopUpScreen() {
             {[
               { step: '1', text: 'Enter your EcoCash mobile number' },
               { step: '2', text: 'Tap "Pay with EcoCash"' },
-              { step: '3', text: 'Approve the USSD push on your phone' },
+              { step: '3', text: 'Enter your EcoCash PIN on the USSD prompt' },
               { step: '4', text: '12 scan credits added instantly!' },
             ].map((item, i) => (
               <View
@@ -392,6 +532,33 @@ export default function TopUpScreen() {
               </View>
             ))}
           </View>
+
+          {/* Security note */}
+          <View
+            style={{
+              marginTop: 20,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              backgroundColor: 'rgba(46,125,50,0.06)',
+              borderRadius: 12,
+              borderCurve: 'continuous',
+            }}
+          >
+            <Ionicons name="shield-checkmark-outline" size={16} color={Colors.primary} />
+            <Text
+              style={{
+                fontFamily: Fonts.regular,
+                fontSize: 12,
+                color: Colors.textSecondary,
+                flex: 1,
+              }}
+            >
+              Payments are processed securely via Paynow Zimbabwe
+            </Text>
+          </View>
         </>
       )}
 
@@ -426,7 +593,7 @@ export default function TopUpScreen() {
             }}
           >
             {status === 'processing'
-              ? 'Initiating Payment...'
+              ? 'Sending Payment Request...'
               : 'Waiting for Confirmation'}
           </Text>
           <Text
@@ -436,12 +603,12 @@ export default function TopUpScreen() {
               color: Colors.textSecondary,
               textAlign: 'center',
               lineHeight: 22,
-              maxWidth: 280,
+              maxWidth: 300,
             }}
           >
             {status === 'processing'
-              ? 'Connecting to EcoCash...'
-              : 'Check your phone for the USSD prompt and enter your EcoCash PIN to confirm'}
+              ? 'Connecting to EcoCash via Paynow...'
+              : 'A payment request has been sent to your phone. Enter your EcoCash PIN to complete the transaction.'}
           </Text>
 
           <View
@@ -466,6 +633,52 @@ export default function TopUpScreen() {
               {phoneNumber}
             </Text>
           </View>
+
+          {status === 'polling' && (
+            <View style={{ marginTop: 8, gap: 8, alignItems: 'center' }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  backgroundColor: 'rgba(46,125,50,0.08)',
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  borderRadius: 12,
+                }}
+              >
+                <Ionicons name="time-outline" size={14} color={Colors.primary} />
+                <Text
+                  style={{
+                    fontFamily: Fonts.regular,
+                    fontSize: 12,
+                    color: Colors.textSecondary,
+                  }}
+                >
+                  Checking payment status...
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={handleRetry}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 20,
+                  marginTop: 12,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: Fonts.semiBold,
+                    fontSize: 14,
+                    color: Colors.error,
+                  }}
+                >
+                  Cancel
+                </Text>
+              </Pressable>
+            </View>
+          )}
         </Animated.View>
       )}
 
@@ -594,7 +807,8 @@ export default function TopUpScreen() {
               fontSize: 14,
               color: Colors.textSecondary,
               textAlign: 'center',
-              maxWidth: 280,
+              maxWidth: 300,
+              lineHeight: 21,
             }}
           >
             {errorMsg || 'Something went wrong. Please try again.'}
