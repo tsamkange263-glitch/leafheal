@@ -55,7 +55,7 @@ export type Database = {
         Row: {
           amount_usd: number;
           created_at: string;
-          ecocash_number: string;
+          ecocash_number: string | null;
           id: string;
           paynow_reference: string | null;
           scans_added: number;
@@ -65,7 +65,7 @@ export type Database = {
         Insert: {
           amount_usd: number;
           created_at?: string;
-          ecocash_number: string;
+          ecocash_number?: string | null;
           id?: string;
           paynow_reference?: string | null;
           scans_added: number;
@@ -75,7 +75,7 @@ export type Database = {
         Update: {
           amount_usd?: number;
           created_at?: string;
-          ecocash_number?: string;
+          ecocash_number?: string | null;
           id?: string;
           paynow_reference?: string | null;
           scans_added?: number;

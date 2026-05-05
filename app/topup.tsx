@@ -20,14 +20,17 @@ import {
   validateZimPhone,
   generateTransactionRef,
   sendEcoCashPayment,
+  initiateCardPayment,
   pollTransaction,
   isPaymentPaid,
   isPaymentPending,
   isPaymentFailed,
 } from '@/lib/paynow';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import * as WebBrowser from 'expo-web-browser';
 
 type PaymentStatus = 'idle' | 'processing' | 'polling' | 'success' | 'failed';
+type PaymentMethod = 'ecocash' | 'card';
 
 const PAYMENT_AMOUNT_USD = 1.0;
 const SCANS_PER_TOPUP = 12;
@@ -40,6 +43,7 @@ export default function TopUpScreen() {
   const { user } = useAuth();
   const { profile, updateCredits } = useAppStore();
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ecocash');
   const [status, setStatus] = useState<PaymentStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,7 +160,7 @@ export default function TopUpScreen() {
     [credits, user?.id, updateCredits]
   );
 
-  const handlePayment = async () => {
+  const handleEcoCashPayment = async () => {
     if (!user?.id) return;
 
     const cleanedPhone = phoneNumber.replace(/[\s\-()]/g, '');
@@ -223,11 +227,86 @@ export default function TopUpScreen() {
     }
   };
 
+  const handleCardPayment = async () => {
+    if (!user?.id) return;
+
+    setStatus('processing');
+    setErrorMsg('');
+
+    const reference = generateTransactionRef();
+    const userEmail = user.email || '';
+
+    try {
+      // Create payment record in database
+      const { data: payment, error: insertErr } = await supabase
+        .from('payments')
+        .insert({
+          user_id: user.id,
+          ecocash_number: null,
+          amount_usd: PAYMENT_AMOUNT_USD,
+          scans_added: SCANS_PER_TOPUP,
+          status: 'pending',
+          paynow_reference: reference,
+        })
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      // Initiate standard web checkout
+      const paynowResponse = await initiateCardPayment(
+        PAYMENT_AMOUNT_USD,
+        reference,
+        userEmail
+      );
+
+      // Update payment record
+      await supabase
+        .from('payments')
+        .update({
+          status: 'sent',
+          paynow_reference: paynowResponse.browserurl || reference,
+        })
+        .eq('id', payment.id);
+
+      // Open the Paynow checkout page in browser
+      if (paynowResponse.browserurl) {
+        await WebBrowser.openBrowserAsync(paynowResponse.browserurl, {
+          dismissButtonStyle: 'done',
+          presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+        });
+      }
+
+      // After browser closes, start polling for payment confirmation
+      setStatus('polling');
+      startPolling(paynowResponse.pollurl!, payment.id);
+    } catch (e: unknown) {
+      console.error('Card payment initiation error:', e);
+      setStatus('failed');
+      setErrorMsg(
+        e instanceof Error
+          ? e.message
+          : 'Failed to initiate card payment. Please try again.'
+      );
+    }
+  };
+
+  const handlePayment = () => {
+    if (paymentMethod === 'ecocash') {
+      handleEcoCashPayment();
+    } else {
+      handleCardPayment();
+    }
+  };
+
   const handleRetry = () => {
     cleanupPolling();
     setStatus('idle');
     setErrorMsg('');
   };
+
+  const isEcoCashValid = validateZimPhone(phoneNumber.replace(/[\s\-()]/g, ''));
+  const isPayButtonEnabled = paymentMethod === 'card' || isEcoCashValid;
 
   return (
     <ScrollView
@@ -356,10 +435,10 @@ export default function TopUpScreen() {
             </View>
           </Animated.View>
 
-          {/* Phone input */}
+          {/* Payment Method Selector */}
           <Animated.View
-            entering={FadeInDown.delay(100).duration(500)}
-            style={{ marginTop: 24, gap: 8 }}
+            entering={FadeInDown.delay(80).duration(500)}
+            style={{ marginTop: 24, gap: 10 }}
           >
             <Text
               style={{
@@ -369,84 +448,277 @@ export default function TopUpScreen() {
                 marginLeft: 4,
               }}
             >
-              EcoCash Mobile Number
+              Payment Method
             </Text>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                backgroundColor: Colors.card,
-                borderRadius: 16,
-                borderCurve: 'continuous',
-                borderWidth: 2,
-                borderColor: Colors.border,
-                paddingHorizontal: 16,
-                gap: 10,
-              }}
-            >
-              <View
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  backgroundColor: 'rgba(233,30,99,0.1)',
+            <View style={{ gap: 10 }}>
+              {/* EcoCash option */}
+              <Pressable
+                onPress={() => setPaymentMethod('ecocash')}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
                   alignItems: 'center',
-                  justifyContent: 'center',
+                  backgroundColor: Colors.card,
+                  borderRadius: 16,
+                  borderCurve: 'continuous',
+                  borderWidth: 2,
+                  borderColor: paymentMethod === 'ecocash' ? Colors.ecocash : Colors.border,
+                  paddingHorizontal: 16,
+                  paddingVertical: 14,
+                  gap: 12,
+                  opacity: pressed ? 0.9 : 1,
+                })}
+              >
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    borderCurve: 'continuous',
+                    backgroundColor: paymentMethod === 'ecocash' ? 'rgba(233,30,99,0.1)' : 'rgba(0,0,0,0.04)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 20 }}>💚</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontFamily: Fonts.bold,
+                      fontSize: 15,
+                      color: Colors.textPrimary,
+                    }}
+                  >
+                    EcoCash
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: Fonts.regular,
+                      fontSize: 12,
+                      color: Colors.textSecondary,
+                      marginTop: 1,
+                    }}
+                  >
+                    Pay via USSD push to your phone
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 11,
+                    borderWidth: 2,
+                    borderColor: paymentMethod === 'ecocash' ? Colors.ecocash : Colors.border,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {paymentMethod === 'ecocash' && (
+                    <View
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 6,
+                        backgroundColor: Colors.ecocash,
+                      }}
+                    />
+                  )}
+                </View>
+              </Pressable>
+
+              {/* Visa/Mastercard option */}
+              <Pressable
+                onPress={() => setPaymentMethod('card')}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: Colors.card,
+                  borderRadius: 16,
+                  borderCurve: 'continuous',
+                  borderWidth: 2,
+                  borderColor: paymentMethod === 'card' ? '#1A237E' : Colors.border,
+                  paddingHorizontal: 16,
+                  paddingVertical: 14,
+                  gap: 12,
+                  opacity: pressed ? 0.9 : 1,
+                })}
+              >
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    borderCurve: 'continuous',
+                    backgroundColor: paymentMethod === 'card' ? 'rgba(26,35,126,0.08)' : 'rgba(0,0,0,0.04)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 20 }}>💳</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontFamily: Fonts.bold,
+                      fontSize: 15,
+                      color: Colors.textPrimary,
+                    }}
+                  >
+                    Visa / Mastercard
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: Fonts.regular,
+                      fontSize: 12,
+                      color: Colors.textSecondary,
+                      marginTop: 1,
+                    }}
+                  >
+                    Pay securely with your bank card
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 11,
+                    borderWidth: 2,
+                    borderColor: paymentMethod === 'card' ? '#1A237E' : Colors.border,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {paymentMethod === 'card' && (
+                    <View
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 6,
+                        backgroundColor: '#1A237E',
+                      }}
+                    />
+                  )}
+                </View>
+              </Pressable>
+            </View>
+          </Animated.View>
+
+          {/* Phone input - only shown for EcoCash */}
+          {paymentMethod === 'ecocash' && (
+            <Animated.View
+              entering={FadeInDown.duration(400)}
+              style={{ marginTop: 20, gap: 8 }}
+            >
+              <Text
+                style={{
+                  fontFamily: Fonts.bold,
+                  fontSize: 15,
+                  color: Colors.textPrimary,
+                  marginLeft: 4,
                 }}
               >
-                <Ionicons name="phone-portrait-outline" size={16} color={Colors.ecocash} />
-              </View>
-              <TextInput
-                value={phoneNumber}
-                onChangeText={setPhoneNumber}
-                placeholder="07XXXXXXXX"
-                placeholderTextColor={Colors.textLight}
-                keyboardType="phone-pad"
-                maxLength={12}
+                EcoCash Mobile Number
+              </Text>
+              <View
                 style={{
-                  flex: 1,
-                  fontFamily: Fonts.semiBold,
-                  fontSize: 18,
-                  color: Colors.textPrimary,
-                  paddingVertical: 16,
-                  letterSpacing: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: Colors.card,
+                  borderRadius: 16,
+                  borderCurve: 'continuous',
+                  borderWidth: 2,
+                  borderColor: Colors.border,
+                  paddingHorizontal: 16,
+                  gap: 10,
                 }}
-              />
-              {phoneNumber.length > 0 && (
-                <Ionicons
-                  name={
-                    validateZimPhone(phoneNumber.replace(/[\s\-()]/g, ''))
-                      ? 'checkmark-circle'
-                      : 'close-circle'
-                  }
-                  size={22}
-                  color={
-                    validateZimPhone(phoneNumber.replace(/[\s\-()]/g, ''))
-                      ? Colors.success
-                      : Colors.error
-                  }
+              >
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    backgroundColor: 'rgba(233,30,99,0.1)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="phone-portrait-outline" size={16} color={Colors.ecocash} />
+                </View>
+                <TextInput
+                  value={phoneNumber}
+                  onChangeText={setPhoneNumber}
+                  placeholder="07XXXXXXXX"
+                  placeholderTextColor={Colors.textLight}
+                  keyboardType="phone-pad"
+                  maxLength={12}
+                  style={{
+                    flex: 1,
+                    fontFamily: Fonts.semiBold,
+                    fontSize: 18,
+                    color: Colors.textPrimary,
+                    paddingVertical: 16,
+                    letterSpacing: 1,
+                  }}
                 />
-              )}
-            </View>
-            <Text
+                {phoneNumber.length > 0 && (
+                  <Ionicons
+                    name={isEcoCashValid ? 'checkmark-circle' : 'close-circle'}
+                    size={22}
+                    color={isEcoCashValid ? Colors.success : Colors.error}
+                  />
+                )}
+              </View>
+              <Text
+                style={{
+                  fontFamily: Fonts.regular,
+                  fontSize: 12,
+                  color: Colors.textSecondary,
+                  marginLeft: 4,
+                }}
+              >
+                {"You'll receive a USSD push on this number to confirm payment"}
+              </Text>
+            </Animated.View>
+          )}
+
+          {/* Card info message */}
+          {paymentMethod === 'card' && (
+            <Animated.View
+              entering={FadeInDown.duration(400)}
               style={{
-                fontFamily: Fonts.regular,
-                fontSize: 12,
-                color: Colors.textSecondary,
-                marginLeft: 4,
+                marginTop: 20,
+                backgroundColor: 'rgba(26,35,126,0.05)',
+                borderRadius: 14,
+                borderCurve: 'continuous',
+                paddingHorizontal: 16,
+                paddingVertical: 14,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
               }}
             >
-              {"You'll receive a USSD push on this number to confirm payment"}
-            </Text>
-          </Animated.View>
+              <Ionicons name="lock-closed" size={18} color="#1A237E" />
+              <Text
+                style={{
+                  fontFamily: Fonts.regular,
+                  fontSize: 13,
+                  color: Colors.textSecondary,
+                  flex: 1,
+                  lineHeight: 19,
+                }}
+              >
+                {"You'll be redirected to Paynow's secure checkout page to enter your card details."}
+              </Text>
+            </Animated.View>
+          )}
 
           {/* Pay button */}
           <Animated.View entering={FadeInDown.delay(200).duration(500)}>
             <Pressable
               onPress={handlePayment}
-              disabled={!validateZimPhone(phoneNumber.replace(/[\s\-()]/g, ''))}
+              disabled={!isPayButtonEnabled}
               style={({ pressed }) => ({
-                backgroundColor: Colors.ecocash,
+                backgroundColor: paymentMethod === 'ecocash' ? Colors.ecocash : '#1A237E',
                 paddingVertical: 18,
                 borderRadius: 16,
                 borderCurve: 'continuous',
@@ -455,14 +727,18 @@ export default function TopUpScreen() {
                 flexDirection: 'row',
                 gap: 8,
                 marginTop: 20,
-                opacity: validateZimPhone(phoneNumber.replace(/[\s\-()]/g, ''))
+                opacity: isPayButtonEnabled
                   ? pressed
                     ? 0.9
                     : 1
                   : 0.5,
               })}
             >
-              <Ionicons name="wallet" size={20} color={Colors.white} />
+              <Ionicons
+                name={paymentMethod === 'ecocash' ? 'wallet' : 'card'}
+                size={20}
+                color={Colors.white}
+              />
               <Text
                 style={{
                   fontFamily: Fonts.bold,
@@ -470,7 +746,7 @@ export default function TopUpScreen() {
                   color: Colors.white,
                 }}
               >
-                Pay with EcoCash
+                {paymentMethod === 'ecocash' ? 'Pay with EcoCash' : 'Pay with Card'}
               </Text>
             </Pressable>
           </Animated.View>
@@ -486,51 +762,97 @@ export default function TopUpScreen() {
             >
               How it works
             </Text>
-            {[
-              { step: '1', text: 'Enter your EcoCash mobile number' },
-              { step: '2', text: 'Tap "Pay with EcoCash"' },
-              { step: '3', text: 'Enter your EcoCash PIN on the USSD prompt' },
-              { step: '4', text: '12 scan credits added instantly!' },
-            ].map((item, i) => (
-              <View
-                key={i}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 12,
-                }}
-              >
-                <View
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(46,125,50,0.1)',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Text
+            {paymentMethod === 'ecocash'
+              ? [
+                  { step: '1', text: 'Enter your EcoCash mobile number' },
+                  { step: '2', text: 'Tap "Pay with EcoCash"' },
+                  { step: '3', text: 'Enter your EcoCash PIN on the USSD prompt' },
+                  { step: '4', text: '12 scan credits added instantly!' },
+                ].map((item, i) => (
+                  <View
+                    key={i}
                     style={{
-                      fontFamily: Fonts.bold,
-                      fontSize: 13,
-                      color: Colors.primary,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
                     }}
                   >
-                    {item.step}
-                  </Text>
-                </View>
-                <Text
-                  style={{
-                    fontFamily: Fonts.regular,
-                    fontSize: 14,
-                    color: Colors.textSecondary,
-                  }}
-                >
-                  {item.text}
-                </Text>
-              </View>
-            ))}
+                    <View
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 14,
+                        backgroundColor: 'rgba(46,125,50,0.1)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: Fonts.bold,
+                          fontSize: 13,
+                          color: Colors.primary,
+                        }}
+                      >
+                        {item.step}
+                      </Text>
+                    </View>
+                    <Text
+                      style={{
+                        fontFamily: Fonts.regular,
+                        fontSize: 14,
+                        color: Colors.textSecondary,
+                      }}
+                    >
+                      {item.text}
+                    </Text>
+                  </View>
+                ))
+              : [
+                  { step: '1', text: 'Tap "Pay with Card"' },
+                  { step: '2', text: 'Enter your Visa/Mastercard details on Paynow' },
+                  { step: '3', text: 'Confirm the $1.00 payment' },
+                  { step: '4', text: '12 scan credits added instantly!' },
+                ].map((item, i) => (
+                  <View
+                    key={i}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 14,
+                        backgroundColor: 'rgba(26,35,126,0.08)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: Fonts.bold,
+                          fontSize: 13,
+                          color: '#1A237E',
+                        }}
+                      >
+                        {item.step}
+                      </Text>
+                    </View>
+                    <Text
+                      style={{
+                        fontFamily: Fonts.regular,
+                        fontSize: 14,
+                        color: Colors.textSecondary,
+                      }}
+                    >
+                      {item.text}
+                    </Text>
+                  </View>
+                ))}
           </View>
 
           {/* Security note */}
@@ -577,12 +899,12 @@ export default function TopUpScreen() {
               width: 100,
               height: 100,
               borderRadius: 50,
-              backgroundColor: 'rgba(233,30,99,0.1)',
+              backgroundColor: paymentMethod === 'ecocash' ? 'rgba(233,30,99,0.1)' : 'rgba(26,35,126,0.08)',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <ActivityIndicator size="large" color={Colors.ecocash} />
+            <ActivityIndicator size="large" color={paymentMethod === 'ecocash' ? Colors.ecocash : '#1A237E'} />
           </View>
           <Text
             style={{
@@ -593,8 +915,10 @@ export default function TopUpScreen() {
             }}
           >
             {status === 'processing'
-              ? 'Sending Payment Request...'
-              : 'Waiting for Confirmation'}
+              ? 'Initiating Payment...'
+              : paymentMethod === 'ecocash'
+              ? 'Waiting for Confirmation'
+              : 'Verifying Card Payment'}
           </Text>
           <Text
             style={{
@@ -607,32 +931,38 @@ export default function TopUpScreen() {
             }}
           >
             {status === 'processing'
-              ? 'Connecting to EcoCash via Paynow...'
-              : 'A payment request has been sent to your phone. Enter your EcoCash PIN to complete the transaction.'}
+              ? paymentMethod === 'ecocash'
+                ? 'Connecting to EcoCash via Paynow...'
+                : 'Connecting to Paynow secure checkout...'
+              : paymentMethod === 'ecocash'
+              ? 'A payment request has been sent to your phone. Enter your EcoCash PIN to complete the transaction.'
+              : 'Checking if your card payment was completed successfully...'}
           </Text>
 
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              backgroundColor: 'rgba(255,111,0,0.08)',
-              paddingHorizontal: 14,
-              paddingVertical: 8,
-              borderRadius: 12,
-            }}
-          >
-            <Ionicons name="phone-portrait" size={16} color={Colors.warning} />
-            <Text
+          {paymentMethod === 'ecocash' && status === 'polling' && (
+            <View
               style={{
-                fontFamily: Fonts.semiBold,
-                fontSize: 13,
-                color: Colors.warning,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                backgroundColor: 'rgba(255,111,0,0.08)',
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                borderRadius: 12,
               }}
             >
-              {phoneNumber}
-            </Text>
-          </View>
+              <Ionicons name="phone-portrait" size={16} color={Colors.warning} />
+              <Text
+                style={{
+                  fontFamily: Fonts.semiBold,
+                  fontSize: 13,
+                  color: Colors.warning,
+                }}
+              >
+                {phoneNumber}
+              </Text>
+            </View>
+          )}
 
           {status === 'polling' && (
             <View style={{ marginTop: 8, gap: 8, alignItems: 'center' }}>
