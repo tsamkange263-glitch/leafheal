@@ -6,6 +6,8 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +18,7 @@ import { Fonts } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
+import { AilmentQuery } from '@/components/ailment-query';
 import type { Tables, RemedyData } from '@/lib/types';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -179,11 +182,16 @@ export default function ResultScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: Colors.background }}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: Colors.background }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={0}
+    >
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {/* Plant image header */}
         <View style={{ height: 280, backgroundColor: Colors.primaryDark }}>
@@ -622,6 +630,20 @@ export default function ResultScreen() {
             </View>
           )}
         </Animated.View>
+
+        {/* Ailment Query Section */}
+        <Animated.View
+          entering={FadeInDown.delay(300).duration(500)}
+          style={{
+            marginHorizontal: 16,
+            marginTop: 20,
+          }}
+        >
+          <AilmentQuery
+            plantName={scan.plant_name || 'Unknown Plant'}
+            scientificName={scan.scientific_name}
+          />
+        </Animated.View>
       </ScrollView>
 
       {/* Bottom actions */}
@@ -701,6 +723,6 @@ export default function ResultScreen() {
           </Text>
         </Pressable>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }

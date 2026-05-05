@@ -126,7 +126,20 @@ export default function ScanScreen() {
       // Build the AI prompt with herbal reference context if available
       const herbalContext = herbalContextRef.current;
       const referenceSection = herbalContext
-        ? `\n\nIMPORTANT: You have access to the following herbal medicine reference data extracted from authoritative PDF sources. Cross-reference this data to provide more accurate, detailed, and locally-relevant remedy information for the identified plant. If the plant appears in any of these references, prioritize that information:\n\n<HERBAL_REFERENCE_DATA>\n${herbalContext}\n</HERBAL_REFERENCE_DATA>\n\nUse the above reference data to enhance your remedy information with specific, evidence-based details about preparation methods, dosages, traditional uses, and precautions.`
+        ? `\n\nIMPORTANT INSTRUCTIONS FOR BLENDING KNOWLEDGE SOURCES:
+You have access to herbal medicine reference data extracted from authoritative PDF books below. Your task is to BLEND your own extensive botanical and herbal medicine knowledge WITH this reference data to provide the most comprehensive response possible.
+
+RULES:
+1. If the identified plant IS mentioned in the PDF reference data, use that data to ENRICH and validate your response — combine PDF-specific details (local names, preparation methods, dosages) with your broader knowledge.
+2. If the identified plant is NOT found in the PDF reference data, you MUST still provide complete, detailed remedy information based on your own knowledge of the plant's medicinal properties. Never say "no information available" just because the PDFs don't mention the plant.
+3. The PDF data SUPPLEMENTS your knowledge — it does NOT replace it. Always provide your best expert analysis regardless of what the PDFs contain.
+4. When PDF data is available for the plant, cite specific preparation methods, dosages, and traditional uses from those sources to add locally-relevant detail.
+
+<HERBAL_REFERENCE_DATA>
+${herbalContext}
+</HERBAL_REFERENCE_DATA>
+
+Blend the above reference data with your own expertise to provide rich, accurate, evidence-based remedy information.`
         : '';
 
       // Step 1: Analyze the image to identify the plant
