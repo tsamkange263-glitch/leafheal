@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
-import { generateText } from '@fastshot/ai';
+import { useTextGeneration } from '@fastshot/ai';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
@@ -27,11 +27,52 @@ interface AilmentQueryProps {
   scientificName: string | null;
 }
 
+// Sanitize text to remove control characters and ensure clean content for API
+function sanitizeForPrompt(text: string): string {
+  return text
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control chars (keep \n, \r, \t)
+    .replace(/�/g, '') // Remove replacement characters
+    .replace(/\0/g, '') // Remove null bytes
+    .trim();
+}
+
+// Build a concise prompt that stays within API limits
+function buildPrompt(
+  plantName: string,
+  scientificName: string | null,
+  condition: string,
+  herbalContext?: string
+): string {
+  const plantRef = scientificName
+    ? `${plantName} (${scientificName})`
+    : plantName;
+
+  // Keep reference data short to avoid exceeding API prompt limits
+  const referenceSection = herbalContext
+    ? `\n\nHerbal reference data (use to enhance your response if relevant):\n${herbalContext.substring(0, 3000)}`
+    : '';
+
+  return sanitizeForPrompt(
+    `You are an expert herbalist. A user identified the plant "${plantRef}" and wants to know if it helps with: "${condition}"
+
+Respond with these sections (plain text only, no markdown):
+
+1. Applicability: Is ${plantName} beneficial for "${condition}"? If not connected, say so and suggest what it IS useful for.
+2. Preparation: How to prepare ${plantName} for this condition (tea, tincture, poultice, etc.) with step-by-step instructions.
+3. Dosage: Specific amounts, frequency, and duration.
+4. Warnings: Drug interactions, pregnancy warnings, age restrictions, contraindications.
+5. Additional Notes: Complementary herbs or lifestyle recommendations.
+
+Be specific and actionable. If evidence is limited, acknowledge honestly. Aim for 200-350 words.${referenceSection}`
+  );
+}
+
 export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
   const [query, setQuery] = useState('');
   const [responses, setResponses] = useState<AilmentResponse[]>([]);
   const [isQuerying, setIsQuerying] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const { generateText } = useTextGeneration();
 
   const handleSubmitQuery = async () => {
     const trimmedQuery = query.trim();
@@ -50,35 +91,17 @@ export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
         // Continue without reference data
       }
 
-      const referenceSection = herbalContext
-        ? `\n\nYou also have access to herbal medicine reference data from authoritative PDF sources. Cross-reference this data to enhance your response with locally-relevant details. If this plant is mentioned in the references, incorporate that specific information. If not, rely on your own extensive knowledge.\n\n<HERBAL_REFERENCE_DATA>\n${herbalContext.substring(0, 10000)}\n</HERBAL_REFERENCE_DATA>`
-        : '';
+      // Build prompt with herbal context (kept short to avoid 422 validation errors)
+      const prompt = buildPrompt(plantName, scientificName, currentQuery, herbalContext);
 
-      const prompt = `You are an expert herbalist and botanical medicine specialist. A user has identified the plant "${plantName}"${scientificName ? ` (${scientificName})` : ''} and wants to know if it can help with a specific condition.
+      // Use the hook's generateText which takes prompt string directly
+      let result = await generateText(prompt, { temperature: 0.7 });
 
-CONDITION/AILMENT: "${currentQuery}"
-
-Provide a detailed, helpful response covering ALL of the following points:
-
-1. Applicability: Is ${plantName} applicable or beneficial for treating "${currentQuery}"? Be honest — if the plant has no known connection to this condition, say so clearly but suggest what it IS useful for instead.
-
-2. Preparation Method: If applicable, explain exactly how to prepare ${plantName} for this specific condition (tea, tincture, poultice, compress, steam inhalation, etc.). Include step-by-step instructions.
-
-3. Dosage Recommendations: Provide specific dosage guidance — how much, how often, for how long. Include measurements where possible (teaspoons, cups, drops, etc.).
-
-4. Warnings & Contraindications: Any specific warnings for using ${plantName} for this condition. Include drug interactions, pregnancy warnings, age restrictions, or conditions that could worsen.
-
-5. Additional Notes: Any complementary herbs that work well with ${plantName} for this condition, or lifestyle recommendations.
-
-IMPORTANT RULES:
-- Always provide your best expert knowledge regardless of PDF reference availability.
-- Be specific and actionable — avoid vague generalizations.
-- If the plant has limited evidence for this condition, acknowledge that honestly while still providing what is known.
-- Never refuse to provide information. Always give your expert analysis.
-- Keep your response concise but comprehensive (aim for 200-400 words).
-- Do NOT use markdown formatting like ** or ## in your response. Use plain text only.${referenceSection}`;
-
-      const result = await generateText({ prompt });
+      // Fallback: retry without herbal context if first attempt fails
+      if (!result && herbalContext) {
+        const fallbackPrompt = buildPrompt(plantName, scientificName, currentQuery);
+        result = await generateText(fallbackPrompt, { temperature: 0.7 });
+      }
 
       if (result) {
         const newResponse: AilmentResponse = {
@@ -93,6 +116,28 @@ IMPORTANT RULES:
       }
     } catch (error) {
       console.error('Ailment query error:', error);
+
+      // If first attempt failed, try a minimal prompt as last resort
+      try {
+        const minimalPrompt = sanitizeForPrompt(
+          `Describe how the plant "${plantName}" can help with "${currentQuery}". Include preparation, dosage, and warnings. Plain text only, no markdown. 200 words max.`
+        );
+        const fallbackResult = await generateText(minimalPrompt, { temperature: 0.7 });
+
+        if (fallbackResult) {
+          const newResponse: AilmentResponse = {
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            ailment: currentQuery,
+            response: fallbackResult,
+            timestamp: new Date(),
+          };
+          setResponses(prev => [newResponse, ...prev]);
+          return;
+        }
+      } catch {
+        // Final fallback also failed, show error
+      }
+
       const errorResponse: AilmentResponse = {
         id: `${Date.now()}-error`,
         ailment: currentQuery,
