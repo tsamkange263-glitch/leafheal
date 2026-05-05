@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { CreditBadge } from '@/components/credit-badge';
+import { getHerbalReferenceContext, shouldRefreshCache, refreshHerbalReferenceCache } from '@/lib/herbal-reference';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 
 export default function ScanScreen() {
@@ -41,6 +42,27 @@ export default function ScanScreen() {
   } = useTextGeneration();
 
   const credits = profile?.scan_credits ?? 0;
+
+  // Pre-load herbal reference context from cached PDFs
+  const herbalContextRef = useRef<string>('');
+
+  useEffect(() => {
+    const loadHerbalContext = async () => {
+      try {
+        // Refresh cache in background if stale (older than 24 hours)
+        const needsRefresh = await shouldRefreshCache();
+        if (needsRefresh) {
+          await refreshHerbalReferenceCache();
+        }
+        // Load the reference context for use in AI prompts
+        const context = await getHerbalReferenceContext();
+        herbalContextRef.current = context;
+      } catch {
+        // Gracefully degrade — AI will work without reference data
+      }
+    };
+    loadHerbalContext();
+  }, []);
 
   const pickImage = async (useCamera: boolean) => {
     if (credits <= 0) {
@@ -101,10 +123,16 @@ export default function ScanScreen() {
     setAnalyzing(true);
 
     try {
+      // Build the AI prompt with herbal reference context if available
+      const herbalContext = herbalContextRef.current;
+      const referenceSection = herbalContext
+        ? `\n\nIMPORTANT: You have access to the following herbal medicine reference data extracted from authoritative PDF sources. Cross-reference this data to provide more accurate, detailed, and locally-relevant remedy information for the identified plant. If the plant appears in any of these references, prioritize that information:\n\n<HERBAL_REFERENCE_DATA>\n${herbalContext}\n</HERBAL_REFERENCE_DATA>\n\nUse the above reference data to enhance your remedy information with specific, evidence-based details about preparation methods, dosages, traditional uses, and precautions.`
+        : '';
+
       // Step 1: Analyze the image to identify the plant
       await analyzeImage({
         imageUrl: selectedImage,
-        prompt: `You are an expert botanist. Analyze this plant/leaf image and identify the species. Respond ONLY with valid JSON in this exact format, no other text:
+        prompt: `You are an expert botanist and herbalist. Analyze this plant/leaf image and identify the species. Respond ONLY with valid JSON in this exact format, no other text:
 {
   "plant_name": "Common Name",
   "scientific_name": "Scientific name in italics format",
@@ -112,13 +140,13 @@ export default function ScanScreen() {
   "overview": "A detailed 2-3 sentence description of the plant including its family, habitat, and distinguishing features.",
   "remedies": {
     "uses": "Main medicinal/herbal uses of the plant (2-3 sentences)",
-    "preparation": "How to prepare the plant as a remedy - tea, poultice, tincture, etc.",
-    "dosage": "Recommended dosage and frequency",
-    "benefits": "Key health benefits (2-3 items)",
-    "traditional_uses": "Traditional medicine uses from various cultures"
+    "preparation": "How to prepare the plant as a remedy - tea, poultice, tincture, etc. Include specific preparation methods from traditional and modern herbalism.",
+    "dosage": "Recommended dosage and frequency with specific measurements where possible",
+    "benefits": "Key health benefits (2-3 items) supported by traditional use and available evidence",
+    "traditional_uses": "Traditional medicine uses from various cultures, especially African and Appalachian traditions where applicable"
   },
   "precautions": "Important warnings, toxicity information, contraindications, and who should avoid this plant."
-}
+}${referenceSection}
 
 If you cannot identify the plant with reasonable confidence, still provide your best guess with a lower confidence score.`,
       });
@@ -667,7 +695,7 @@ Only return the JSON, nothing else.`
               lineHeight: 20,
             }}
           >
-            Our AI is identifying the plant species{'\n'}and gathering herbal remedy information
+            Our AI is identifying the plant species{'\n'}and cross-referencing herbal remedy databases
           </Animated.Text>
 
           {selectedImage && (

@@ -163,6 +163,33 @@ export type Database = {
         };
         Relationships: [];
       };
+      herbal_pdf_cache: {
+        Row: {
+          id: string;
+          file_name: string;
+          extracted_text: string;
+          file_size: number | null;
+          extracted_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          file_name: string;
+          extracted_text: string;
+          file_size?: number | null;
+          extracted_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          file_name?: string;
+          extracted_text?: string;
+          file_size?: number | null;
+          extracted_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
