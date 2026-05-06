@@ -226,3 +226,178 @@ export async function identifyPlantWithPlantNet(
     };
   }
 }
+
+// ============================================================
+// PlantNet Disease Identification API
+// ============================================================
+
+const PLANTNET_DISEASE_API_URL = 'https://my-api.plantnet.org/v2/diseases/identify';
+const PLANTNET_DISEASE_API_KEY = '2b10FwLN1xs3J5l1EAgj8PKY3O';
+const DISEASE_REQUEST_TIMEOUT_MS = 30000;
+
+export interface DiseaseResult {
+  name: string;
+  scientificName?: string;
+  confidence: number;
+  relatedImages: string[];
+  description?: string;
+}
+
+export interface DiseaseIdentificationResponse {
+  diseases: DiseaseResult[];
+  isHealthy: boolean;
+}
+
+/**
+ * Identifies plant diseases from a leaf image using the PlantNet Disease API.
+ * Returns detected diseases ranked by confidence, with related reference images.
+ */
+export async function identifyPlantDisease(
+  imageUri: string
+): Promise<{ success: true; data: DiseaseIdentificationResponse } | { success: false; error: PlantNetError }> {
+  try {
+    const formData = new FormData();
+
+    const fileName = imageUri.split('/').pop() || 'leaf.jpg';
+    const fileExtension = fileName.split('.').pop()?.toLowerCase() || 'jpg';
+    const mimeType = fileExtension === 'png' ? 'image/png' : 'image/jpeg';
+
+    // Note: Disease endpoint uses "image" (singular), not "images"
+    formData.append('image', {
+      uri: imageUri,
+      name: fileName,
+      type: mimeType,
+    } as any);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), DISEASE_REQUEST_TIMEOUT_MS);
+
+    const response = await fetch(
+      `${PLANTNET_DISEASE_API_URL}?include-related-images=true&api-key=${PLANTNET_DISEASE_API_KEY}`,
+      {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Accept': 'application/json',
+        },
+        signal: controller.signal,
+      }
+    );
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const statusCode = response.status;
+
+      if (statusCode === 404) {
+        return {
+          success: true,
+          data: {
+            diseases: [],
+            isHealthy: true,
+          },
+        };
+      }
+
+      if (statusCode === 429) {
+        return {
+          success: false,
+          error: {
+            type: 'api_error',
+            message: 'Too many requests. Please wait a moment and try again.',
+          },
+        };
+      }
+
+      if (statusCode >= 500) {
+        return {
+          success: false,
+          error: {
+            type: 'api_error',
+            message: 'Disease identification service is temporarily unavailable. Please try again later.',
+          },
+        };
+      }
+
+      return {
+        success: false,
+        error: {
+          type: 'api_error',
+          message: `Disease identification failed (error ${statusCode}). Please try again.`,
+        },
+      };
+    }
+
+    const data = await response.json();
+
+    // Parse the API response — handle various response formats
+    const diseases: DiseaseResult[] = [];
+
+    if (data.results && Array.isArray(data.results)) {
+      for (const result of data.results) {
+        const disease: DiseaseResult = {
+          name: result.disease?.name || result.name || result.species?.commonNames?.[0] || 'Unknown condition',
+          scientificName: result.disease?.scientificName || result.species?.scientificNameWithoutAuthor || undefined,
+          confidence: result.score || result.confidence || 0,
+          relatedImages: [],
+          description: result.disease?.description || result.description || undefined,
+        };
+
+        // Extract related images
+        if (result.images && Array.isArray(result.images)) {
+          disease.relatedImages = result.images
+            .slice(0, 4)
+            .map((img: any) => img.url?.m || img.url?.o || img.m || img.o || img.url || '')
+            .filter(Boolean);
+        } else if (result.relatedImages && Array.isArray(result.relatedImages)) {
+          disease.relatedImages = result.relatedImages.slice(0, 4);
+        }
+
+        if (disease.confidence > 0.01) {
+          diseases.push(disease);
+        }
+      }
+    }
+
+    // Sort by confidence descending
+    diseases.sort((a, b) => b.confidence - a.confidence);
+
+    const isHealthy = diseases.length === 0 || (diseases[0]?.name?.toLowerCase().includes('healthy'));
+
+    return {
+      success: true,
+      data: {
+        diseases,
+        isHealthy,
+      },
+    };
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      return {
+        success: false,
+        error: {
+          type: 'timeout',
+          message: 'Disease identification timed out. Please check your connection and try again.',
+        },
+      };
+    }
+
+    if (error?.message?.includes('Network') || error?.message?.includes('fetch')) {
+      return {
+        success: false,
+        error: {
+          type: 'network_error',
+          message: 'Network error. Please check your internet connection and try again.',
+        },
+      };
+    }
+
+    return {
+      success: false,
+      error: {
+        type: 'api_error',
+        message: 'An unexpected error occurred during disease identification. Please try again.',
+      },
+    };
+  }
+}

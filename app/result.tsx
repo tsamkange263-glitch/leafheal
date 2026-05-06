@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,9 +21,10 @@ import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { AilmentQuery } from '@/components/ailment-query';
 import { getTargetedPlantReference } from '@/lib/herbal-reference';
-import type { Tables, RemedyData, PlantHealthData } from '@/lib/types';
-import type { PlantNetResult } from '@/lib/plantnet';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { identifyPlantDisease } from '@/lib/plantnet';
+import type { Tables, RemedyData } from '@/lib/types';
+import type { PlantNetResult, DiseaseIdentificationResponse } from '@/lib/plantnet';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
 type TabKey = 'overview' | 'remedies' | 'precautions' | 'plant_health';
 
@@ -72,6 +73,15 @@ export default function ResultScreen() {
 
   // Mode: 'selection' for fresh scan, 'detail' for viewing saved scan
   const [mode, setMode] = useState<'selection' | 'detail'>('selection');
+
+  // Disease identification state
+  const [diseaseLoading, setDiseaseLoading] = useState(false);
+  const [diseaseError, setDiseaseError] = useState<string | null>(null);
+  const [diseaseData, setDiseaseData] = useState<DiseaseIdentificationResponse | null>(null);
+  const [diseaseAdvice, setDiseaseAdvice] = useState<string | null>(null);
+  const [diseaseAdviceLoading, setDiseaseAdviceLoading] = useState(false);
+  const diseaseCache = useRef<{ [key: string]: { data: DiseaseIdentificationResponse; advice: string | null } }>({});
+  const diseaseApiCalled = useRef(false);
 
   const scanId = scan?.id || params.scanId;
   const isArchived = scanId ? archivedIds.includes(scanId) : false;
@@ -278,13 +288,138 @@ Provide rich, specific, actionable information. Only return the JSON.`;
     }
   };
 
+  // Trigger disease identification when Plant Health tab is selected
+  useEffect(() => {
+    if (activeTab !== 'plant_health' || !scan || !mode || mode !== 'detail') return;
+    if (diseaseApiCalled.current) return;
+
+    const imageUrl = scan.image_url || userImageUrl || params.localImageUri;
+    if (!imageUrl) return;
+
+    // Check cache first
+    const cacheKey = scan.id || imageUrl;
+    if (diseaseCache.current[cacheKey]) {
+      const cached = diseaseCache.current[cacheKey];
+      setDiseaseData(cached.data);
+      setDiseaseAdvice(cached.advice);
+      return;
+    }
+
+    fetchDiseaseIdentification(imageUrl, cacheKey);
+  }, [activeTab, scan, mode]);
+
+  const fetchDiseaseIdentification = async (imageUrl: string, cacheKey: string) => {
+    diseaseApiCalled.current = true;
+    setDiseaseLoading(true);
+    setDiseaseError(null);
+    setDiseaseData(null);
+    setDiseaseAdvice(null);
+
+    try {
+      const result = await identifyPlantDisease(imageUrl);
+
+      if (!result.success) {
+        setDiseaseError(result.error.message);
+        setDiseaseLoading(false);
+        return;
+      }
+
+      setDiseaseData(result.data);
+      setDiseaseLoading(false);
+
+      // Generate AI advice based on disease results
+      await generateDiseaseAdvice(result.data, cacheKey);
+    } catch (e: any) {
+      console.error('Disease identification error:', e);
+      setDiseaseError('Failed to identify diseases. Please try again.');
+      setDiseaseLoading(false);
+    }
+  };
+
+  const generateDiseaseAdvice = async (data: DiseaseIdentificationResponse, cacheKey: string) => {
+    setDiseaseAdviceLoading(true);
+
+    try {
+      const plantName = scan?.plant_name || 'Unknown Plant';
+      let advicePrompt: string;
+
+      if (data.isHealthy || data.diseases.length === 0) {
+        advicePrompt = `You are an expert agronomist. The plant "${plantName}" (${scan?.scientific_name || ''}) has been scanned and no diseases were detected. It appears healthy.
+
+Provide practical care advice in JSON format:
+{
+  "status": "healthy",
+  "summary": "Brief summary (1 sentence) confirming plant health",
+  "care_tips": ["tip1", "tip2", "tip3", "tip4"],
+  "prevention": ["prevention tip 1", "prevention tip 2", "prevention tip 3"],
+  "optimal_conditions": "Brief note on ideal growing conditions for this plant"
+}
+
+Only return valid JSON.`;
+      } else {
+        const diseaseList = data.diseases
+          .slice(0, 3)
+          .map((d, i) => `${i + 1}. ${d.name} (confidence: ${Math.round(d.confidence * 100)}%)${d.scientificName ? ` - ${d.scientificName}` : ''}`)
+          .join('\n');
+
+        advicePrompt = `You are an expert agronomist and plant pathologist. A leaf image of "${plantName}" (${scan?.scientific_name || ''}) was analyzed and the following diseases/conditions were detected:
+
+${diseaseList}
+
+Provide comprehensive treatment advice in JSON format:
+{
+  "status": "diseased",
+  "severity": "mild|moderate|severe",
+  "primary_disease": "Name of the most likely disease",
+  "summary": "1-2 sentence diagnosis summary for agronomists",
+  "organic_treatments": ["specific organic treatment 1", "organic treatment 2", "organic treatment 3"],
+  "chemical_treatments": ["specific chemical/fungicide treatment 1", "chemical treatment 2"],
+  "immediate_actions": ["urgent action 1", "urgent action 2"],
+  "prevention": ["prevention tip 1", "prevention tip 2", "prevention tip 3"],
+  "spread_risk": "Assessment of how likely this is to spread to other plants",
+  "recovery_timeline": "Expected recovery time with proper treatment"
+}
+
+Provide specific, actionable advice with real product/compound names where applicable. Only return valid JSON.`;
+      }
+
+      const adviceResult = await withTimeout(
+        generateText(advicePrompt),
+        REMEDY_TIMEOUT_MS,
+        'Disease advice'
+      );
+
+      if (adviceResult) {
+        const match = adviceResult.match(/\{[\s\S]*\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          const adviceStr = JSON.stringify(parsed);
+          setDiseaseAdvice(adviceStr);
+
+          // Cache results
+          diseaseCache.current[cacheKey] = { data, advice: adviceStr };
+        }
+      }
+    } catch (e: any) {
+      console.error('Disease advice generation error:', e);
+      // Still show disease results even if AI advice fails
+    } finally {
+      setDiseaseAdviceLoading(false);
+    }
+  };
+
+  const retryDiseaseIdentification = () => {
+    diseaseApiCalled.current = false;
+    const imageUrl = scan?.image_url || userImageUrl || params.localImageUri;
+    if (!imageUrl) return;
+    const cacheKey = scan?.id || imageUrl;
+    fetchDiseaseIdentification(imageUrl, cacheKey);
+  };
+
   const remedies: RemedyData | null = scan?.remedies
     ? (scan.remedies as unknown as RemedyData)
     : null;
 
-  const plantHealth: PlantHealthData | null = scan?.plant_health
-    ? (scan.plant_health as unknown as PlantHealthData)
-    : null;
 
   const confidencePercent = scan?.confidence
     ? Math.round(scan.confidence * 100)
@@ -1262,354 +1397,784 @@ Provide rich, specific, actionable information. Only return the JSON.`;
           )}
 
           {activeTab === 'plant_health' && (
-            <View
-              style={{
-                backgroundColor: Colors.card,
-                borderRadius: 18,
-                borderCurve: 'continuous',
-                padding: 20,
-                gap: 16,
-                boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-              }}
-            >
-              {/* Header */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="fitness" size={20} color={plantHealth?.is_healthy ? Colors.success : Colors.error} />
-                <Text
-                  style={{
-                    fontFamily: Fonts.bold,
-                    fontSize: 17,
-                    color: Colors.textPrimary,
-                  }}
-                >
-                  Plant Health Diagnosis
-                </Text>
-              </View>
-
-              {plantHealth ? (
-                <>
-                  {/* Status badge */}
+            <View style={{ gap: 16 }}>
+              {/* Main Disease Identification Card */}
+              <View
+                style={{
+                  backgroundColor: Colors.card,
+                  borderRadius: 18,
+                  borderCurve: 'continuous',
+                  padding: 20,
+                  gap: 16,
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+                }}
+              >
+                {/* Header */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons
+                      name="fitness"
+                      size={20}
+                      color={diseaseData?.isHealthy ? Colors.success : diseaseData ? Colors.error : Colors.primary}
+                    />
+                    <Text
+                      style={{
+                        fontFamily: Fonts.bold,
+                        fontSize: 17,
+                        color: Colors.textPrimary,
+                      }}
+                    >
+                      Disease Identification
+                    </Text>
+                  </View>
                   <View
                     style={{
-                      flexDirection: 'row',
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 8,
+                      backgroundColor: 'rgba(139,195,74,0.1)',
+                    }}
+                  >
+                    <Text style={{ fontFamily: Fonts.semiBold, fontSize: 10, color: Colors.primary, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                      PlantNet AI
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Loading state */}
+                {diseaseLoading && (
+                  <Animated.View
+                    entering={FadeIn.duration(300)}
+                    style={{
                       alignItems: 'center',
-                      gap: 10,
-                      backgroundColor: plantHealth.is_healthy
-                        ? 'rgba(46,125,50,0.08)'
-                        : plantHealth.severity === 'severe'
-                        ? 'rgba(211,47,47,0.08)'
-                        : plantHealth.severity === 'moderate'
-                        ? 'rgba(255,111,0,0.08)'
-                        : 'rgba(255,193,7,0.08)',
-                      borderRadius: 14,
-                      borderCurve: 'continuous',
-                      padding: 14,
+                      paddingVertical: 32,
+                      gap: 14,
                     }}
                   >
                     <View
                       style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 20,
-                        backgroundColor: plantHealth.is_healthy
-                          ? 'rgba(46,125,50,0.15)'
-                          : plantHealth.severity === 'severe'
-                          ? 'rgba(211,47,47,0.15)'
-                          : plantHealth.severity === 'moderate'
-                          ? 'rgba(255,111,0,0.15)'
-                          : 'rgba(255,193,7,0.15)',
+                        width: 56,
+                        height: 56,
+                        borderRadius: 28,
+                        backgroundColor: 'rgba(139,195,74,0.1)',
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}
                     >
-                      <Ionicons
-                        name={plantHealth.is_healthy ? 'checkmark-circle' : 'alert-circle'}
-                        size={22}
-                        color={
-                          plantHealth.is_healthy
-                            ? Colors.success
-                            : plantHealth.severity === 'severe'
-                            ? Colors.error
-                            : Colors.warning
-                        }
-                      />
+                      <ActivityIndicator size="large" color={Colors.primary} />
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        selectable
-                        style={{
-                          fontFamily: Fonts.bold,
-                          fontSize: 15,
-                          color: plantHealth.is_healthy
-                            ? Colors.success
-                            : plantHealth.severity === 'severe'
-                            ? Colors.error
-                            : Colors.warning,
-                        }}
-                      >
-                        {plantHealth.condition_name}
-                      </Text>
-                      {!plantHealth.is_healthy && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                          <View
-                            style={{
-                              paddingHorizontal: 8,
-                              paddingVertical: 2,
-                              borderRadius: 6,
-                              backgroundColor: plantHealth.severity === 'severe'
-                                ? 'rgba(211,47,47,0.15)'
-                                : plantHealth.severity === 'moderate'
-                                ? 'rgba(255,111,0,0.15)'
-                                : 'rgba(255,193,7,0.15)',
-                            }}
-                          >
-                            <Text
-                              style={{
-                                fontFamily: Fonts.semiBold,
-                                fontSize: 11,
-                                color: plantHealth.severity === 'severe'
-                                  ? Colors.error
-                                  : Colors.warning,
-                                textTransform: 'uppercase',
-                              }}
-                            >
-                              {plantHealth.severity}
-                            </Text>
-                          </View>
-                          <View
-                            style={{
-                              paddingHorizontal: 8,
-                              paddingVertical: 2,
-                              borderRadius: 6,
-                              backgroundColor: 'rgba(46,125,50,0.1)',
-                            }}
-                          >
-                            <Text
-                              style={{
-                                fontFamily: Fonts.semiBold,
-                                fontSize: 11,
-                                color: Colors.primary,
-                                textTransform: 'uppercase',
-                              }}
-                            >
-                              {plantHealth.cause_category?.replace('_', ' ')}
-                            </Text>
-                          </View>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-
-                  {/* Symptoms */}
-                  {plantHealth.symptoms && !plantHealth.is_healthy && (
-                    <View style={{ gap: 6 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Ionicons name="eye-outline" size={16} color={Colors.primary} />
-                        <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.primary }}>
-                          Symptoms Observed
-                        </Text>
-                      </View>
-                      <Text
-                        selectable
-                        style={{
-                          fontFamily: Fonts.regular,
-                          fontSize: 14,
-                          color: Colors.textPrimary,
-                          lineHeight: 22,
-                          paddingLeft: 22,
-                        }}
-                      >
-                        {plantHealth.symptoms}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Cause */}
-                  {plantHealth.cause && !plantHealth.is_healthy && (
-                    <View style={{ gap: 6 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Ionicons name="bug-outline" size={16} color={Colors.primary} />
-                        <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.primary }}>
-                          Likely Cause
-                        </Text>
-                      </View>
-                      <Text
-                        selectable
-                        style={{
-                          fontFamily: Fonts.regular,
-                          fontSize: 14,
-                          color: Colors.textPrimary,
-                          lineHeight: 22,
-                          paddingLeft: 22,
-                        }}
-                      >
-                        {plantHealth.cause}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Treatments */}
-                  {plantHealth.treatments && !plantHealth.is_healthy && (
-                    <View style={{ gap: 10 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Ionicons name="medkit-outline" size={16} color={Colors.primary} />
-                        <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.primary }}>
-                          Recommended Treatments
-                        </Text>
-                      </View>
-
-                      {plantHealth.treatments.organic && (
-                        <View
-                          style={{
-                            backgroundColor: 'rgba(139,195,74,0.08)',
-                            borderRadius: 12,
-                            borderCurve: 'continuous',
-                            padding: 12,
-                            marginLeft: 22,
-                            gap: 6,
-                          }}
-                        >
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Ionicons name="leaf-outline" size={14} color={Colors.accent} />
-                            <Text style={{ fontFamily: Fonts.semiBold, fontSize: 13, color: Colors.primary }}>
-                              Organic / Natural
-                            </Text>
-                          </View>
-                          <Text
-                            selectable
-                            style={{
-                              fontFamily: Fonts.regular,
-                              fontSize: 13,
-                              color: Colors.textPrimary,
-                              lineHeight: 20,
-                            }}
-                          >
-                            {plantHealth.treatments.organic}
-                          </Text>
-                        </View>
-                      )}
-
-                      {plantHealth.treatments.chemical && (
-                        <View
-                          style={{
-                            backgroundColor: 'rgba(33,150,243,0.06)',
-                            borderRadius: 12,
-                            borderCurve: 'continuous',
-                            padding: 12,
-                            marginLeft: 22,
-                            gap: 6,
-                          }}
-                        >
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Ionicons name="flask-outline" size={14} color="#1976D2" />
-                            <Text style={{ fontFamily: Fonts.semiBold, fontSize: 13, color: '#1976D2' }}>
-                              Chemical
-                            </Text>
-                          </View>
-                          <Text
-                            selectable
-                            style={{
-                              fontFamily: Fonts.regular,
-                              fontSize: 13,
-                              color: Colors.textPrimary,
-                              lineHeight: 20,
-                            }}
-                          >
-                            {plantHealth.treatments.chemical}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Prevention Tips */}
-                  {plantHealth.prevention_tips && !plantHealth.is_healthy && (
-                    <View style={{ gap: 6 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Ionicons name="shield-checkmark-outline" size={16} color={Colors.primary} />
-                        <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.primary }}>
-                          Prevention Tips
-                        </Text>
-                      </View>
-                      <Text
-                        selectable
-                        style={{
-                          fontFamily: Fonts.regular,
-                          fontSize: 14,
-                          color: Colors.textPrimary,
-                          lineHeight: 22,
-                          paddingLeft: 22,
-                        }}
-                      >
-                        {plantHealth.prevention_tips}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* General Care Tips */}
-                  {plantHealth.general_care_tips && (
-                    <View style={{ gap: 6 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Ionicons name="sunny-outline" size={16} color={Colors.primary} />
-                        <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.primary }}>
-                          {plantHealth.is_healthy ? 'General Care Tips' : 'Ongoing Care'}
-                        </Text>
-                      </View>
-                      <Text
-                        selectable
-                        style={{
-                          fontFamily: Fonts.regular,
-                          fontSize: 14,
-                          color: Colors.textPrimary,
-                          lineHeight: 22,
-                          paddingLeft: 22,
-                        }}
-                      >
-                        {plantHealth.general_care_tips}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Healthy plant message */}
-                  {plantHealth.is_healthy && (
-                    <View
+                    <Text
                       style={{
-                        backgroundColor: 'rgba(46,125,50,0.06)',
-                        borderRadius: 12,
-                        borderCurve: 'continuous',
-                        padding: 14,
-                        flexDirection: 'row',
-                        gap: 10,
-                        marginTop: 4,
+                        fontFamily: Fonts.semiBold,
+                        fontSize: 15,
+                        color: Colors.textPrimary,
                       }}
                     >
-                      <Ionicons name="happy-outline" size={20} color={Colors.success} />
+                      Analyzing leaf for diseases...
+                    </Text>
+                    <Text
+                      style={{
+                        fontFamily: Fonts.regular,
+                        fontSize: 13,
+                        color: Colors.textSecondary,
+                        textAlign: 'center',
+                        lineHeight: 19,
+                      }}
+                    >
+                      Comparing your image against known plant diseases using PlantNet&apos;s disease database
+                    </Text>
+                  </Animated.View>
+                )}
+
+                {/* Error state */}
+                {diseaseError && !diseaseLoading && (
+                  <Animated.View
+                    entering={FadeInDown.duration(400)}
+                    style={{
+                      alignItems: 'center',
+                      paddingVertical: 24,
+                      gap: 12,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 52,
+                        height: 52,
+                        borderRadius: 26,
+                        backgroundColor: 'rgba(211,47,47,0.08)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Ionicons name="cloud-offline-outline" size={26} color={Colors.error} />
+                    </View>
+                    <Text
+                      selectable
+                      style={{
+                        fontFamily: Fonts.regular,
+                        fontSize: 14,
+                        color: Colors.textSecondary,
+                        textAlign: 'center',
+                        lineHeight: 20,
+                        paddingHorizontal: 8,
+                      }}
+                    >
+                      {diseaseError}
+                    </Text>
+                    <Pressable
+                      onPress={retryDiseaseIdentification}
+                      style={({ pressed }) => ({
+                        backgroundColor: Colors.primary,
+                        paddingHorizontal: 20,
+                        paddingVertical: 11,
+                        borderRadius: 10,
+                        borderCurve: 'continuous',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        opacity: pressed ? 0.85 : 1,
+                      })}
+                    >
+                      <Ionicons name="refresh" size={16} color={Colors.white} />
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.white }}>
+                        Try Again
+                      </Text>
+                    </Pressable>
+                  </Animated.View>
+                )}
+
+                {/* Results: Healthy */}
+                {diseaseData && diseaseData.isHealthy && !diseaseLoading && (
+                  <Animated.View entering={FadeInDown.duration(400)} style={{ gap: 14 }}>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 12,
+                        backgroundColor: 'rgba(46,125,50,0.07)',
+                        borderRadius: 14,
+                        borderCurve: 'continuous',
+                        padding: 16,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 22,
+                          backgroundColor: 'rgba(46,125,50,0.15)',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Ionicons name="checkmark-circle" size={24} color={Colors.success} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={{
+                            fontFamily: Fonts.bold,
+                            fontSize: 16,
+                            color: Colors.success,
+                          }}
+                        >
+                          Plant Appears Healthy
+                        </Text>
+                        <Text
+                          style={{
+                            fontFamily: Fonts.regular,
+                            fontSize: 13,
+                            color: Colors.textSecondary,
+                            marginTop: 2,
+                            lineHeight: 18,
+                          }}
+                        >
+                          No diseases or conditions detected in the leaf image
+                        </Text>
+                      </View>
+                    </View>
+                  </Animated.View>
+                )}
+
+                {/* Results: Diseases detected */}
+                {diseaseData && !diseaseData.isHealthy && diseaseData.diseases.length > 0 && !diseaseLoading && (
+                  <Animated.View entering={FadeInDown.duration(400)} style={{ gap: 14 }}>
+                    {/* Overall status */}
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 12,
+                        backgroundColor: 'rgba(211,47,47,0.06)',
+                        borderRadius: 14,
+                        borderCurve: 'continuous',
+                        padding: 14,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: 20,
+                          backgroundColor: 'rgba(211,47,47,0.12)',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Ionicons name="alert-circle" size={22} color={Colors.error} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 15, color: Colors.error }}>
+                          {diseaseData.diseases.length} Disease{diseaseData.diseases.length > 1 ? 's' : ''} Detected
+                        </Text>
+                        <Text style={{ fontFamily: Fonts.regular, fontSize: 12, color: Colors.textSecondary, marginTop: 1 }}>
+                          Ranked by confidence score
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Disease list */}
+                    {diseaseData.diseases.slice(0, 5).map((disease, idx) => (
+                      <Animated.View
+                        key={idx}
+                        entering={FadeInDown.delay(100 * idx).duration(400)}
+                        style={{
+                          backgroundColor: idx === 0 ? 'rgba(211,47,47,0.04)' : Colors.background,
+                          borderRadius: 14,
+                          borderCurve: 'continuous',
+                          padding: 14,
+                          gap: 10,
+                          borderWidth: idx === 0 ? 1 : 0.5,
+                          borderColor: idx === 0 ? 'rgba(211,47,47,0.15)' : Colors.border,
+                        }}
+                      >
+                        {/* Disease header */}
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                          <View
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: 14,
+                              backgroundColor: idx === 0
+                                ? 'rgba(211,47,47,0.12)'
+                                : idx === 1
+                                ? 'rgba(255,111,0,0.1)'
+                                : 'rgba(255,193,7,0.1)',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontFamily: Fonts.bold,
+                                fontSize: 12,
+                                color: idx === 0 ? Colors.error : idx === 1 ? Colors.warning : '#FFC107',
+                              }}
+                            >
+                              {idx + 1}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              selectable
+                              style={{
+                                fontFamily: Fonts.bold,
+                                fontSize: 14,
+                                color: Colors.textPrimary,
+                              }}
+                            >
+                              {disease.name}
+                            </Text>
+                            {disease.scientificName && (
+                              <Text
+                                selectable
+                                style={{
+                                  fontFamily: Fonts.regular,
+                                  fontSize: 12,
+                                  color: Colors.textSecondary,
+                                  fontStyle: 'italic',
+                                  marginTop: 1,
+                                }}
+                              >
+                                {disease.scientificName}
+                              </Text>
+                            )}
+                          </View>
+                          {/* Confidence badge */}
+                          <View
+                            style={{
+                              backgroundColor: disease.confidence > 0.5
+                                ? 'rgba(211,47,47,0.1)'
+                                : disease.confidence > 0.25
+                                ? 'rgba(255,111,0,0.1)'
+                                : 'rgba(255,193,7,0.1)',
+                              paddingHorizontal: 8,
+                              paddingVertical: 4,
+                              borderRadius: 8,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontFamily: Fonts.bold,
+                                fontSize: 12,
+                                fontVariant: ['tabular-nums'],
+                                color: disease.confidence > 0.5
+                                  ? Colors.error
+                                  : disease.confidence > 0.25
+                                  ? Colors.warning
+                                  : '#D4A017',
+                              }}
+                            >
+                              {Math.round(disease.confidence * 100)}%
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Reference images */}
+                        {disease.relatedImages && disease.relatedImages.length > 0 && (
+                          <View style={{ gap: 6 }}>
+                            <Text
+                              style={{
+                                fontFamily: Fonts.semiBold,
+                                fontSize: 11,
+                                color: Colors.textLight,
+                                textTransform: 'uppercase',
+                                letterSpacing: 0.4,
+                                paddingLeft: 38,
+                              }}
+                            >
+                              Reference Images
+                            </Text>
+                            <ScrollView
+                              horizontal
+                              showsHorizontalScrollIndicator={false}
+                              style={{ flexGrow: 0 }}
+                              contentContainerStyle={{ gap: 8, paddingLeft: 38 }}
+                            >
+                              {disease.relatedImages.map((imgUrl, imgIdx) => (
+                                <View
+                                  key={imgIdx}
+                                  style={{
+                                    width: 72,
+                                    height: 72,
+                                    borderRadius: 10,
+                                    borderCurve: 'continuous',
+                                    overflow: 'hidden',
+                                    backgroundColor: Colors.background,
+                                    borderWidth: 1,
+                                    borderColor: Colors.border,
+                                  }}
+                                >
+                                  <Image
+                                    source={{ uri: imgUrl }}
+                                    style={{ width: '100%', height: '100%' }}
+                                    contentFit="cover"
+                                  />
+                                </View>
+                              ))}
+                            </ScrollView>
+                          </View>
+                        )}
+                      </Animated.View>
+                    ))}
+                  </Animated.View>
+                )}
+
+                {/* No data state - show initial prompt when not loading/no error/no data */}
+                {!diseaseLoading && !diseaseError && !diseaseData && (
+                  <View style={{ alignItems: 'center', paddingVertical: 24, gap: 10 }}>
+                    <Ionicons name="scan-outline" size={32} color={Colors.textLight} />
+                    <Text
+                      style={{
+                        fontFamily: Fonts.regular,
+                        fontSize: 14,
+                        color: Colors.textSecondary,
+                        textAlign: 'center',
+                      }}
+                    >
+                      Disease analysis will begin automatically
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* AI-Powered Treatment Advice Card */}
+              {diseaseData && !diseaseLoading && (
+                <Animated.View entering={FadeInDown.delay(200).duration(500)}>
+                  <View
+                    style={{
+                      backgroundColor: Colors.card,
+                      borderRadius: 18,
+                      borderCurve: 'continuous',
+                      padding: 20,
+                      gap: 14,
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+                    }}
+                  >
+                    {/* Advice header */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="sparkles" size={18} color={Colors.accent} />
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 16, color: Colors.textPrimary }}>
+                          {diseaseData.isHealthy ? 'Care Recommendations' : 'Treatment & Advice'}
+                        </Text>
+                      </View>
+                      {diseaseAdviceLoading && (
+                        <ActivityIndicator size="small" color={Colors.primary} />
+                      )}
+                    </View>
+
+                    {/* AI advice loading */}
+                    {diseaseAdviceLoading && !diseaseAdvice && (
+                      <View style={{ paddingVertical: 16, alignItems: 'center', gap: 8 }}>
+                        <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: Colors.textSecondary }}>
+                          Generating expert recommendations...
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* AI advice content */}
+                    {diseaseAdvice && (() => {
+                      try {
+                        const advice = JSON.parse(diseaseAdvice);
+
+                        if (advice.status === 'healthy') {
+                          return (
+                            <View style={{ gap: 14 }}>
+                              {/* Summary */}
+                              {advice.summary && (
+                                <Text
+                                  selectable
+                                  style={{
+                                    fontFamily: Fonts.regular,
+                                    fontSize: 14,
+                                    color: Colors.textPrimary,
+                                    lineHeight: 22,
+                                  }}
+                                >
+                                  {advice.summary}
+                                </Text>
+                              )}
+
+                              {/* Care Tips */}
+                              {advice.care_tips && advice.care_tips.length > 0 && (
+                                <View style={{ gap: 8 }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                    <Ionicons name="sunny-outline" size={15} color={Colors.primary} />
+                                    <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Colors.primary }}>
+                                      Care Tips
+                                    </Text>
+                                  </View>
+                                  {advice.care_tips.map((tip: string, i: number) => (
+                                    <View key={i} style={{ flexDirection: 'row', gap: 8, paddingLeft: 22 }}>
+                                      <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.accent, marginTop: 7 }} />
+                                      <Text
+                                        selectable
+                                        style={{ fontFamily: Fonts.regular, fontSize: 13, color: Colors.textPrimary, lineHeight: 20, flex: 1 }}
+                                      >
+                                        {tip}
+                                      </Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              )}
+
+                              {/* Prevention */}
+                              {advice.prevention && advice.prevention.length > 0 && (
+                                <View style={{ gap: 8 }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                    <Ionicons name="shield-checkmark-outline" size={15} color={Colors.primary} />
+                                    <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Colors.primary }}>
+                                      Prevention
+                                    </Text>
+                                  </View>
+                                  {advice.prevention.map((tip: string, i: number) => (
+                                    <View key={i} style={{ flexDirection: 'row', gap: 8, paddingLeft: 22 }}>
+                                      <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.accent, marginTop: 7 }} />
+                                      <Text
+                                        selectable
+                                        style={{ fontFamily: Fonts.regular, fontSize: 13, color: Colors.textPrimary, lineHeight: 20, flex: 1 }}
+                                      >
+                                        {tip}
+                                      </Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              )}
+
+                              {/* Optimal conditions */}
+                              {advice.optimal_conditions && (
+                                <View
+                                  style={{
+                                    backgroundColor: 'rgba(139,195,74,0.08)',
+                                    borderRadius: 12,
+                                    borderCurve: 'continuous',
+                                    padding: 12,
+                                    flexDirection: 'row',
+                                    gap: 10,
+                                  }}
+                                >
+                                  <Ionicons name="leaf-outline" size={16} color={Colors.accent} />
+                                  <Text
+                                    selectable
+                                    style={{ fontFamily: Fonts.regular, fontSize: 13, color: Colors.textPrimary, lineHeight: 19, flex: 1 }}
+                                  >
+                                    {advice.optimal_conditions}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          );
+                        }
+
+                        // Diseased plant advice
+                        return (
+                          <View style={{ gap: 14 }}>
+                            {/* Severity + Summary */}
+                            {advice.severity && (
+                              <View
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 8,
+                                }}
+                              >
+                                <View
+                                  style={{
+                                    paddingHorizontal: 10,
+                                    paddingVertical: 4,
+                                    borderRadius: 8,
+                                    backgroundColor: advice.severity === 'severe'
+                                      ? 'rgba(211,47,47,0.1)'
+                                      : advice.severity === 'moderate'
+                                      ? 'rgba(255,111,0,0.1)'
+                                      : 'rgba(255,193,7,0.1)',
+                                  }}
+                                >
+                                  <Text
+                                    style={{
+                                      fontFamily: Fonts.bold,
+                                      fontSize: 11,
+                                      textTransform: 'uppercase',
+                                      color: advice.severity === 'severe'
+                                        ? Colors.error
+                                        : advice.severity === 'moderate'
+                                        ? Colors.warning
+                                        : '#D4A017',
+                                    }}
+                                  >
+                                    {advice.severity} severity
+                                  </Text>
+                                </View>
+                              </View>
+                            )}
+
+                            {advice.summary && (
+                              <Text
+                                selectable
+                                style={{ fontFamily: Fonts.regular, fontSize: 14, color: Colors.textPrimary, lineHeight: 22 }}
+                              >
+                                {advice.summary}
+                              </Text>
+                            )}
+
+                            {/* Immediate Actions */}
+                            {advice.immediate_actions && advice.immediate_actions.length > 0 && (
+                              <View
+                                style={{
+                                  backgroundColor: 'rgba(211,47,47,0.05)',
+                                  borderRadius: 12,
+                                  borderCurve: 'continuous',
+                                  padding: 12,
+                                  gap: 8,
+                                }}
+                              >
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <Ionicons name="flash-outline" size={15} color={Colors.error} />
+                                  <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Colors.error }}>
+                                    Immediate Actions
+                                  </Text>
+                                </View>
+                                {advice.immediate_actions.map((action: string, i: number) => (
+                                  <View key={i} style={{ flexDirection: 'row', gap: 8, paddingLeft: 4 }}>
+                                    <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: Colors.error }}>•</Text>
+                                    <Text
+                                      selectable
+                                      style={{ fontFamily: Fonts.regular, fontSize: 13, color: Colors.textPrimary, lineHeight: 19, flex: 1 }}
+                                    >
+                                      {action}
+                                    </Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+
+                            {/* Organic Treatments */}
+                            {advice.organic_treatments && advice.organic_treatments.length > 0 && (
+                              <View style={{ gap: 8 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <Ionicons name="leaf-outline" size={15} color={Colors.accent} />
+                                  <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Colors.primary }}>
+                                    Organic Treatments
+                                  </Text>
+                                </View>
+                                <View
+                                  style={{
+                                    backgroundColor: 'rgba(139,195,74,0.06)',
+                                    borderRadius: 12,
+                                    borderCurve: 'continuous',
+                                    padding: 12,
+                                    gap: 6,
+                                  }}
+                                >
+                                  {advice.organic_treatments.map((treatment: string, i: number) => (
+                                    <View key={i} style={{ flexDirection: 'row', gap: 8 }}>
+                                      <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.accent, marginTop: 7 }} />
+                                      <Text
+                                        selectable
+                                        style={{ fontFamily: Fonts.regular, fontSize: 13, color: Colors.textPrimary, lineHeight: 19, flex: 1 }}
+                                      >
+                                        {treatment}
+                                      </Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              </View>
+                            )}
+
+                            {/* Chemical Treatments */}
+                            {advice.chemical_treatments && advice.chemical_treatments.length > 0 && (
+                              <View style={{ gap: 8 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <Ionicons name="flask-outline" size={15} color="#1976D2" />
+                                  <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: '#1976D2' }}>
+                                    Chemical Treatments
+                                  </Text>
+                                </View>
+                                <View
+                                  style={{
+                                    backgroundColor: 'rgba(33,150,243,0.05)',
+                                    borderRadius: 12,
+                                    borderCurve: 'continuous',
+                                    padding: 12,
+                                    gap: 6,
+                                  }}
+                                >
+                                  {advice.chemical_treatments.map((treatment: string, i: number) => (
+                                    <View key={i} style={{ flexDirection: 'row', gap: 8 }}>
+                                      <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: '#1976D2', marginTop: 7 }} />
+                                      <Text
+                                        selectable
+                                        style={{ fontFamily: Fonts.regular, fontSize: 13, color: Colors.textPrimary, lineHeight: 19, flex: 1 }}
+                                      >
+                                        {treatment}
+                                      </Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              </View>
+                            )}
+
+                            {/* Prevention */}
+                            {advice.prevention && advice.prevention.length > 0 && (
+                              <View style={{ gap: 8 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <Ionicons name="shield-checkmark-outline" size={15} color={Colors.primary} />
+                                  <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Colors.primary }}>
+                                    Prevention
+                                  </Text>
+                                </View>
+                                {advice.prevention.map((tip: string, i: number) => (
+                                  <View key={i} style={{ flexDirection: 'row', gap: 8, paddingLeft: 4 }}>
+                                    <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.primary, marginTop: 7 }} />
+                                    <Text
+                                      selectable
+                                      style={{ fontFamily: Fonts.regular, fontSize: 13, color: Colors.textPrimary, lineHeight: 19, flex: 1 }}
+                                    >
+                                      {tip}
+                                    </Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+
+                            {/* Spread risk & Recovery */}
+                            {(advice.spread_risk || advice.recovery_timeline) && (
+                              <View style={{ flexDirection: 'row', gap: 10 }}>
+                                {advice.spread_risk && (
+                                  <View
+                                    style={{
+                                      flex: 1,
+                                      backgroundColor: 'rgba(255,111,0,0.06)',
+                                      borderRadius: 12,
+                                      borderCurve: 'continuous',
+                                      padding: 12,
+                                      gap: 4,
+                                    }}
+                                  >
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                      <Ionicons name="git-branch-outline" size={13} color={Colors.warning} />
+                                      <Text style={{ fontFamily: Fonts.semiBold, fontSize: 11, color: Colors.warning }}>
+                                        Spread Risk
+                                      </Text>
+                                    </View>
+                                    <Text
+                                      selectable
+                                      style={{ fontFamily: Fonts.regular, fontSize: 12, color: Colors.textPrimary, lineHeight: 17 }}
+                                    >
+                                      {advice.spread_risk}
+                                    </Text>
+                                  </View>
+                                )}
+                                {advice.recovery_timeline && (
+                                  <View
+                                    style={{
+                                      flex: 1,
+                                      backgroundColor: 'rgba(46,125,50,0.06)',
+                                      borderRadius: 12,
+                                      borderCurve: 'continuous',
+                                      padding: 12,
+                                      gap: 4,
+                                    }}
+                                  >
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                      <Ionicons name="time-outline" size={13} color={Colors.success} />
+                                      <Text style={{ fontFamily: Fonts.semiBold, fontSize: 11, color: Colors.success }}>
+                                        Recovery
+                                      </Text>
+                                    </View>
+                                    <Text
+                                      selectable
+                                      style={{ fontFamily: Fonts.regular, fontSize: 12, color: Colors.textPrimary, lineHeight: 17 }}
+                                    >
+                                      {advice.recovery_timeline}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+                            )}
+                          </View>
+                        );
+                      } catch {
+                        return null;
+                      }
+                    })()}
+
+                    {/* Fallback: no advice generated yet and not loading */}
+                    {!diseaseAdvice && !diseaseAdviceLoading && (
                       <Text
                         style={{
                           fontFamily: Fonts.regular,
                           fontSize: 13,
-                          color: Colors.success,
-                          flex: 1,
-                          lineHeight: 19,
+                          color: Colors.textSecondary,
+                          textAlign: 'center',
+                          paddingVertical: 8,
                         }}
                       >
-                        This plant appears healthy! No visible signs of disease, pest damage, or nutrient deficiencies were detected.
+                        AI recommendations could not be generated at this time.
                       </Text>
-                    </View>
-                  )}
-                </>
-              ) : (
-                <Text
-                  style={{
-                    fontFamily: Fonts.regular,
-                    fontSize: 15,
-                    color: Colors.textSecondary,
-                    textAlign: 'center',
-                    paddingVertical: 20,
-                  }}
-                >
-                  No plant health data available for this scan.
-                </Text>
+                    )}
+                  </View>
+                </Animated.View>
               )}
 
               {/* Agronomist disclaimer */}
@@ -1621,7 +2186,6 @@ Provide rich, specific, actionable information. Only return the JSON.`;
                   padding: 14,
                   flexDirection: 'row',
                   gap: 10,
-                  marginTop: 4,
                 }}
               >
                 <Ionicons name="information-circle" size={20} color="#1976D2" />
