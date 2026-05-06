@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@fastshot/auth';
-import { useImageAnalysis, useTextGeneration } from '@fastshot/ai';
+import { useTextGeneration } from '@fastshot/ai';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,10 +20,10 @@ import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { CreditBadge } from '@/components/credit-badge';
 import { getHerbalReferenceContext, shouldRefreshCache, refreshHerbalReferenceCache, getTargetedPlantReference } from '@/lib/herbal-reference';
+import { identifyPlantWithPlantNet } from '@/lib/plantnet';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 
 // Timeout constants
-const IDENTIFICATION_TIMEOUT_MS = 30000; // 30 seconds for plant identification
 const REMEDY_TIMEOUT_MS = 30000; // 30 seconds for remedy generation
 const SHOW_CANCEL_AFTER_MS = 10000; // Show cancel/retry after 10 seconds
 
@@ -36,7 +36,6 @@ export default function ScanScreen() {
   const { user } = useAuth();
   const { profile, updateCredits } = useAppStore();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
   const [step, setStep] = useState<'capture' | 'preview' | 'analyzing'>('capture');
   const [analysisStage, setAnalysisStage] = useState<AnalysisStage>('identifying');
   const [showCancel, setShowCancel] = useState(false);
@@ -44,11 +43,6 @@ export default function ScanScreen() {
 
   const cancelledRef = useRef(false);
   const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const {
-    analyzeImage,
-    data: analysisData,
-  } = useImageAnalysis();
 
   const {
     generateText,
@@ -91,7 +85,6 @@ export default function ScanScreen() {
   const handleCancel = useCallback(() => {
     cancelledRef.current = true;
     clearCancelTimer();
-    setAnalyzing(false);
     setStep('preview');
     setShowCancel(false);
     setStageMessage('');
@@ -172,7 +165,6 @@ export default function ScanScreen() {
     if (!selectedImage || !user?.id) return;
 
     setStep('analyzing');
-    setAnalyzing(true);
     setAnalysisStage('identifying');
     setStageMessage('Identifying plant species...');
     setShowCancel(false);
@@ -182,142 +174,52 @@ export default function ScanScreen() {
 
     try {
       // ============================================================
-      // STAGE 1: Quick plant identification (NO PDF data, fast)
+      // STAGE 1: Plant identification via PlantNet API
       // ============================================================
-      await withTimeout(
-        analyzeImage({
-          imageUrl: selectedImage,
-          prompt: `You are an expert botanist and plant pathologist. Identify this plant from the image.
+      const plantNetResult = await identifyPlantWithPlantNet(selectedImage);
 
-Respond ONLY with valid JSON in this exact format, no other text:
-{
-  "plant_name": "Common Name",
-  "scientific_name": "Scientific name",
-  "confidence": 0.85,
-  "overview": "A detailed 2-3 sentence description of the plant including its family, habitat, and distinguishing features.",
-  "plant_health": {
-    "is_healthy": true,
-    "condition_name": "Healthy or name of disease/condition",
-    "symptoms": "Visible symptoms observed on the leaf",
-    "cause": "Likely cause of any issues",
-    "cause_category": "One of: fungal, bacterial, viral, nutrient_deficiency, pest_damage, environmental_stress, healthy, unknown",
-    "severity": "One of: none, mild, moderate, severe",
-    "treatments": {
-      "organic": "Organic treatment options",
-      "chemical": "Chemical treatment options"
-    },
-    "prevention_tips": "How to prevent this condition",
-    "general_care_tips": "General care tips for this plant"
-  }
-}
+      if (cancelledRef.current) return;
 
-Carefully examine the leaf for disease signs, pest damage, nutrient deficiency, or environmental stress. If the plant appears healthy, set is_healthy to true and severity to "none".`,
-        }),
-        IDENTIFICATION_TIMEOUT_MS,
-        'Plant identification'
-      );
-    } catch (e: any) {
-      console.error('Identification error:', e);
+      if (!plantNetResult.success) {
+        clearCancelTimer();
+        const error = plantNetResult.error;
+        Alert.alert(
+          error.type === 'timeout' ? 'Identification Timed Out' : 'Identification Failed',
+          error.message,
+          [{ text: 'OK' }]
+        );
+        setStep('preview');
+        setShowCancel(false);
+        return;
+      }
+
+      const { plantName, scientificName, confidence, family, genus } = plantNetResult.data;
       clearCancelTimer();
 
       if (cancelledRef.current) return;
 
-      const isTimeout = e?.message?.includes('timed out');
-      Alert.alert(
-        isTimeout ? 'Identification Timed Out' : 'Identification Failed',
-        isTimeout
-          ? 'The plant identification is taking longer than expected. Please try again with a clearer photo.'
-          : 'Could not identify the plant. Please try again with a clearer photo.',
-        [{ text: 'OK' }]
-      );
-      setStep('preview');
-      setAnalyzing(false);
-      setShowCancel(false);
-      return;
-    }
-  };
-
-  // When identification data arrives, do Stage 2: enrich with targeted PDF data
-  const processedRef = useRef(false);
-
-  const processResult = useCallback(async () => {
-    if (!analysisData || !selectedImage || !user?.id || processedRef.current) return;
-    if (cancelledRef.current) return;
-    processedRef.current = true;
-
-    clearCancelTimer();
-
-    try {
-      // Parse the identification result
-      let identificationResult: any;
-      try {
-        const jsonMatch = analysisData.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          identificationResult = JSON.parse(jsonMatch[0]);
-        } else {
-          throw new Error('No JSON found in identification response');
-        }
-      } catch {
-        // Fallback: try text generation to parse
-        setStageMessage('Processing identification...');
-        try {
-          const fallbackResult = await withTimeout(
-            generateText(
-              `Based on this plant analysis: "${analysisData}", extract the plant name and health info as JSON:
-{
-  "plant_name": "Common Name",
-  "scientific_name": "Scientific name",
-  "confidence": 0.7,
-  "overview": "Brief description",
-  "plant_health": { "is_healthy": true, "condition_name": "Healthy", "symptoms": "", "cause": "", "cause_category": "healthy", "severity": "none", "treatments": { "organic": "", "chemical": "" }, "prevention_tips": "", "general_care_tips": "" }
-}
-Only return the JSON, nothing else.`
-            ),
-            IDENTIFICATION_TIMEOUT_MS,
-            'Identification parsing'
-          );
-
-          if (fallbackResult) {
-            const match = fallbackResult.match(/\{[\s\S]*\}/);
-            if (match) {
-              identificationResult = JSON.parse(match[0]);
-            }
-          }
-        } catch {
-          // Couldn't parse at all
-        }
-
-        if (!identificationResult) {
-          throw new Error('Failed to parse plant identification');
-        }
-      }
-
-      if (cancelledRef.current) return;
-
       // ============================================================
-      // STAGE 2: Targeted PDF lookup + remedy generation (uses only relevant data)
+      // STAGE 2: AI enrichment — overview, remedies, health, precautions
       // ============================================================
       setAnalysisStage('enriching');
-      setStageMessage(`Identified: ${identificationResult.plant_name}\nLooking up herbal remedies...`);
+      setStageMessage(`Identified: ${plantName}\nLooking up herbal remedies...`);
       startCancelTimer();
 
-      let remedyData: any = null;
+      let enrichmentData: any = null;
 
       try {
-        // Get only the relevant sections from PDFs for this specific plant
-        const targetedReference = await getTargetedPlantReference(
-          identificationResult.plant_name,
-          identificationResult.scientific_name
-        );
+        // Get targeted reference from herbal PDFs
+        const targetedReference = await getTargetedPlantReference(plantName, scientificName);
 
         const referenceSection = targetedReference
-          ? `\n\nRelevant herbal reference excerpts for ${identificationResult.plant_name}:\n${targetedReference}\n\nUse the above reference data to enrich your response with specific preparation methods, dosages, and traditional uses. If the data doesn't match this plant, rely on your own knowledge.`
+          ? `\n\nRelevant herbal reference excerpts for ${plantName}:\n${targetedReference}\n\nUse the above reference data to enrich your response with specific preparation methods, dosages, and traditional uses. If the data doesn't match this plant, rely on your own knowledge.`
           : '';
 
-        const remedyPrompt = `You are an expert herbalist. For the plant "${identificationResult.plant_name}" (${identificationResult.scientific_name || 'unknown scientific name'}), provide herbal remedy information.
+        const enrichmentPrompt = `You are an expert botanist and herbalist. For the plant "${plantName}" (Scientific: ${scientificName}, Family: ${family}, Genus: ${genus}), provide comprehensive information.
 
 Respond ONLY with valid JSON:
 {
+  "overview": "A detailed 2-3 sentence description of the plant including its family, habitat, and distinguishing features.",
   "remedies": {
     "uses": "Main medicinal/herbal uses (2-3 sentences)",
     "preparation": "How to prepare as a remedy - tea, poultice, tincture, etc. Include specific methods.",
@@ -325,36 +227,61 @@ Respond ONLY with valid JSON:
     "benefits": "Key health benefits (2-3 items)",
     "traditional_uses": "Traditional medicine uses from various cultures"
   },
-  "precautions": "Important warnings, toxicity info, contraindications, and who should avoid this plant."
+  "precautions": "Important warnings, toxicity info, contraindications, and who should avoid this plant.",
+  "plant_health": {
+    "is_healthy": true,
+    "condition_name": "Healthy",
+    "symptoms": "No visible symptoms",
+    "cause": "N/A",
+    "cause_category": "healthy",
+    "severity": "none",
+    "treatments": {
+      "organic": "General organic care tips",
+      "chemical": "N/A"
+    },
+    "prevention_tips": "General prevention tips for common diseases of this species",
+    "general_care_tips": "General care tips for this plant including watering, sunlight, and soil preferences"
+  }
 }${referenceSection}
 
-Provide rich, specific, actionable remedy information. Only return the JSON.`;
+Provide rich, specific, actionable information. Only return the JSON.`;
 
-        const remedyResult = await withTimeout(
-          generateText(remedyPrompt),
+        const enrichmentResult = await withTimeout(
+          generateText(enrichmentPrompt),
           REMEDY_TIMEOUT_MS,
-          'Remedy generation'
+          'Plant enrichment'
         );
 
-        if (remedyResult && !cancelledRef.current) {
-          const match = remedyResult.match(/\{[\s\S]*\}/);
+        if (enrichmentResult && !cancelledRef.current) {
+          const match = enrichmentResult.match(/\{[\s\S]*\}/);
           if (match) {
-            remedyData = JSON.parse(match[0]);
+            enrichmentData = JSON.parse(match[0]);
           }
         }
       } catch (e: any) {
-        console.error('Remedy enrichment error:', e);
-        // Non-fatal: we still have the identification, just no enriched remedies
-        // Provide basic placeholder remedies so the result still shows something useful
-        remedyData = {
+        console.error('Enrichment error:', e);
+        // Non-fatal: provide fallback data
+        enrichmentData = {
+          overview: `${plantName} (${scientificName}) is a member of the ${family} family. It belongs to the genus ${genus}.`,
           remedies: {
-            uses: `${identificationResult.plant_name} has various traditional medicinal uses. Further research is recommended for specific applications.`,
+            uses: `${plantName} has various traditional medicinal uses. Further research is recommended for specific applications.`,
             preparation: 'Consult a qualified herbalist for preparation methods specific to your needs.',
             dosage: 'Dosage varies by preparation method. Consult a healthcare professional.',
             benefits: 'This plant has been used in traditional medicine. Specific benefits may vary.',
             traditional_uses: 'Used in various folk medicine traditions. More detailed information is being researched.',
           },
           precautions: 'Always consult a healthcare professional before using any plant medicinally. Some plants may interact with medications or be harmful in certain conditions.',
+          plant_health: {
+            is_healthy: true,
+            condition_name: 'Healthy',
+            symptoms: 'No visible symptoms',
+            cause: 'N/A',
+            cause_category: 'healthy',
+            severity: 'none',
+            treatments: { organic: 'General organic care', chemical: 'N/A' },
+            prevention_tips: 'Ensure proper watering and sunlight.',
+            general_care_tips: 'Research specific care requirements for this species.',
+          },
         };
       }
 
@@ -368,11 +295,15 @@ Provide rich, specific, actionable remedy information. Only return the JSON.`;
       clearCancelTimer();
       setShowCancel(false);
 
-      // Merge identification + remedy data
+      // Build final result combining PlantNet identification + AI enrichment
       const finalResult = {
-        ...identificationResult,
-        remedies: remedyData?.remedies || identificationResult.remedies || null,
-        precautions: remedyData?.precautions || identificationResult.precautions || null,
+        plant_name: plantName,
+        scientific_name: scientificName,
+        confidence,
+        overview: enrichmentData?.overview || `${plantName} (${scientificName}) is a member of the ${family} family.`,
+        remedies: enrichmentData?.remedies || null,
+        precautions: enrichmentData?.precautions || null,
+        plant_health: enrichmentData?.plant_health || null,
       };
 
       // Upload image to Supabase Storage
@@ -435,24 +366,26 @@ Provide rich, specific, actionable remedy information. Only return the JSON.`;
           params: { scanId: scanData.id },
         });
       }
-    } catch (e) {
-      console.error('Process result error:', e);
-      if (!cancelledRef.current) {
-        Alert.alert('Error', 'Failed to save scan result. Please try again.');
-        setStep('preview');
-      }
-      processedRef.current = false;
+    } catch (e: any) {
+      console.error('Analysis error:', e);
+      clearCancelTimer();
+
+      if (cancelledRef.current) return;
+
+      Alert.alert(
+        'Analysis Failed',
+        'An unexpected error occurred. Please try again with a clearer photo.',
+        [{ text: 'OK' }]
+      );
+      setStep('preview');
+      setShowCancel(false);
     } finally {
-      setAnalyzing(false);
       clearCancelTimer();
       setShowCancel(false);
     }
-  }, [analysisData, selectedImage, user?.id]);
+  };
 
-  // Trigger processing when analysis data arrives
-  if (analysisData && analyzing && !processedRef.current) {
-    processResult();
-  }
+  const processedRef = useRef(false);
 
   // Calculate card width for the two options (split layout)
   const cardWidth = (width - 24 * 2 - 14) / 2;
