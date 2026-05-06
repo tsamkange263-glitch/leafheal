@@ -33,7 +33,6 @@ import {
   getPaymentFailureMessage,
   checkPaymentStatusFromDB,
   getPaymentConfig,
-  getEcoCashAmount,
   type PaymentConfig,
   type PollResult,
 } from '@/lib/paynow';
@@ -75,12 +74,12 @@ export default function TopUpScreen() {
   const credits = profile?.scan_credits ?? 0;
 
   // Derived config values (use fetched config or fallback defaults)
-  const CARD_PAYMENT_AMOUNT_USD = paymentConfig
+  // Both EcoCash and Card use the same amount from app_config.paynow_amount
+  const PAYMENT_AMOUNT_USD = paymentConfig
     ? parseFloat(paymentConfig.paynow_amount)
     : DEFAULT_CARD_PAYMENT_AMOUNT_USD;
+  const CARD_PAYMENT_AMOUNT_USD = PAYMENT_AMOUNT_USD;
   const SCANS_PER_TOPUP = paymentConfig?.scans_per_payment ?? DEFAULT_SCANS_PER_TOPUP;
-  // EcoCash amount is fixed at $1.25 (from paynow.ts, Truckit proven config)
-  const PAYMENT_AMOUNT_USD = getEcoCashAmount();
 
   // Fetch payment configuration from database on mount
   useEffect(() => {
@@ -294,7 +293,7 @@ export default function TopUpScreen() {
       if (insertErr) throw insertErr;
 
       // Send EcoCash payment DIRECTLY to Paynow (Truckit proven approach - no Edge Function)
-      const result = await sendEcoCashPayment(cleanedPhone, reference);
+      const result = await sendEcoCashPayment(cleanedPhone, reference, PAYMENT_AMOUNT_USD);
 
       if (!result.success || !result.pollUrl) {
         // Update payment status to failed

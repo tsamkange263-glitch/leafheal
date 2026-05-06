@@ -16,9 +16,6 @@ const MERCHANT_EMAIL = 'samkangineer@gmail.com';
 // Paynow Advanced Payment Button base URL (for card payments only)
 const PAYNOW_BUTTON_BASE_URL = 'https://www.paynow.co.zw/Payment/BillPaymentLink';
 
-// EcoCash payment amount
-const ECOCASH_AMOUNT = 1.25;
-
 export interface PaynowResponse {
   status: string;
   browserurl?: string;
@@ -124,14 +121,16 @@ export function generateTransactionRef(customerName: string): string {
  *
  * @param phone - Customer's EcoCash number (will be normalized to 263 format)
  * @param reference - Unique transaction reference (from generateTransactionRef)
+ * @param paymentAmount - Payment amount in USD (from app_config paynow_amount)
  * @returns { success: true, pollUrl } or { success: false, error }
  */
 export async function sendEcoCashPayment(
   phone: string,
-  reference: string
+  reference: string,
+  paymentAmount: number
 ): Promise<{ success: boolean; pollUrl?: string; error?: string }> {
   const normalizedPhone = normalizePhone(phone);
-  const amount = ECOCASH_AMOUNT.toFixed(2);
+  const amount = paymentAmount.toFixed(2);
   const additionalInfo = 'HerbScan Plant ID Credits';
   const returnUrl = 'https://www.google.com';
   const resultUrl = 'https://www.google.com';
@@ -399,13 +398,6 @@ export async function checkPaymentStatusFromDB(paymentId: string): Promise<strin
 // =============================================================================
 
 export { getPaymentConfig, type PaymentConfig } from '@/lib/app-config';
-
-/**
- * Get the EcoCash payment amount (fixed at $1.25)
- */
-export function getEcoCashAmount(): number {
-  return ECOCASH_AMOUNT;
-}
 
 // =============================================================================
 // Utilities
