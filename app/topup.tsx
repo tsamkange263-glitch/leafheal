@@ -649,7 +649,7 @@ export default function TopUpScreen() {
                 color: 'rgba(255,255,255,0.6)',
               }}
             >
-              ~$0.05 per identification
+              ~$0.06 per identification
             </Text>
 
             {/* Current balance */}
@@ -969,7 +969,7 @@ export default function TopUpScreen() {
                     color: '#1A237E',
                   }}
                 >
-                  Card total: ${CARD_PAYMENT_AMOUNT_USD.toFixed(2)} (includes payment processing fees)
+                  Card total: ${CARD_PAYMENT_AMOUNT_USD.toFixed(2)} for {SCANS_PER_TOPUP} scans (~$0.06 per scan)
                 </Text>
               </View>
             </Animated.View>
@@ -1074,7 +1074,7 @@ export default function TopUpScreen() {
               : [
                   { step: '1', text: 'Tap "Pay with Card" to open Paynow checkout' },
                   { step: '2', text: 'Enter your Visa/Mastercard details securely' },
-                  { step: '3', text: `Confirm the $${CARD_PAYMENT_AMOUNT_USD.toFixed(2)} payment (includes fees)` },
+                  { step: '3', text: `Confirm the $${CARD_PAYMENT_AMOUNT_USD.toFixed(2)} payment` },
                   { step: '4', text: `${SCANS_PER_TOPUP} scan credits added automatically!` },
                 ].map((item, i) => (
                   <View
