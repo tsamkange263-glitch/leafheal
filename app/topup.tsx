@@ -27,11 +27,15 @@ import {
   pollTransaction,
   isPaymentPaid,
   isPaymentPending,
+  isPaymentCancelled,
   isPaymentFailed,
+  isPaymentTimedOut,
+  getPaymentFailureMessage,
   checkPaymentStatusFromDB,
   getPaymentConfig,
   getEcoCashAmount,
   type PaymentConfig,
+  type PollResult,
 } from '@/lib/paynow';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
@@ -139,65 +143,104 @@ export default function TopUpScreen() {
         }
       };
 
+      const onPaymentFailed = async (result: PollResult) => {
+        // Determine the appropriate DB status based on Paynow response
+        const dbStatus = isPaymentCancelled(result) ? 'failed' : isPaymentTimedOut(result) ? 'timeout' : 'failed';
+
+        try {
+          await supabase
+            .from('payments')
+            .update({ status: dbStatus })
+            .eq('id', paymentId);
+        } catch (err) {
+          console.error('Failed to update payment status:', err);
+        }
+
+        // Get user-friendly message based on specific Paynow status
+        const message = getPaymentFailureMessage(result);
+        console.log('[paynow] Payment failed/cancelled. Status:', result.status, '| Message:', message);
+
+        setStatus('failed');
+        setErrorMsg(message);
+      };
+
       const poll = async () => {
         if (isCancelledRef.current) return;
 
         pollAttemptsRef.current += 1;
+        console.log(`[paynow] Poll attempt ${pollAttemptsRef.current}/${MAX_POLL_ATTEMPTS}`);
 
         try {
           const result = await pollTransaction(pollUrl);
 
           if (isCancelledRef.current) return;
 
+          // SUCCESS: Payment confirmed
           if (isPaymentPaid(result)) {
+            console.log('[paynow] Payment confirmed as PAID');
             await onPaymentConfirmed();
             return;
           }
 
+          // FAILED/CANCELLED/TIMED OUT: Terminal failure states - stop polling immediately
           if (isPaymentFailed(result)) {
-            await supabase
-              .from('payments')
-              .update({ status: 'failed' })
-              .eq('id', paymentId);
-            setStatus('failed');
-            setErrorMsg(
-              'Payment was declined or cancelled. Please try again.'
-            );
+            console.log('[paynow] Payment terminal status detected:', result.status);
+            await onPaymentFailed(result);
             return;
           }
 
+          // PENDING: Still waiting for user action - continue polling
           if (isPaymentPending(result)) {
             if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
-              await supabase
-                .from('payments')
-                .update({ status: 'timeout' })
-                .eq('id', paymentId);
+              // All attempts exhausted while still pending
+              try {
+                await supabase
+                  .from('payments')
+                  .update({ status: 'timeout' })
+                  .eq('id', paymentId);
+              } catch (err) {
+                console.error('Failed to update payment timeout:', err);
+              }
+
               setStatus('failed');
               setErrorMsg(
-                'Payment confirmation timed out. If you completed the payment, credits will be added shortly. Contact support if needed.'
+                'Payment timed out. You did not complete the EcoCash payment within 30 seconds. Please try again.'
               );
               return;
             }
 
+            // Schedule next poll
             pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
             return;
           }
 
-          // Unknown status - keep polling until max attempts
+          // UNKNOWN STATUS: Not recognized - treat as pending but log for debugging
+          console.warn('[paynow] Unknown poll status:', result.status);
           if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
+            // Exhausted attempts with unknown status - fail gracefully
+            try {
+              await supabase
+                .from('payments')
+                .update({ status: 'timeout' })
+                .eq('id', paymentId);
+            } catch (err) {
+              console.error('Failed to update payment timeout:', err);
+            }
+
             setStatus('failed');
             setErrorMsg(
-              `Unexpected payment status: "${result.status}". Please contact support.`
+              `Payment could not be confirmed (status: "${result.status || 'unknown'}"). Please try again or contact support.`
             );
             return;
           }
           pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
         } catch (e) {
-          console.error('Poll error:', e);
+          console.error('[paynow] Poll network error:', e);
+          // Network error during polling - retry until max attempts
           if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
             setStatus('failed');
             setErrorMsg(
-              'Could not verify payment status. If you completed the payment, credits will be added shortly.'
+              'Could not verify payment status due to a network issue. If you completed the payment, credits will be added shortly. Otherwise, please try again.'
             );
             return;
           }
@@ -205,7 +248,7 @@ export default function TopUpScreen() {
         }
       };
 
-      // Start first poll
+      // Start first poll immediately
       poll();
     },
     [credits, user?.id, updateCredits, SCANS_PER_TOPUP]
@@ -1136,7 +1179,7 @@ export default function TopUpScreen() {
           >
             {status === 'processing'
               ? 'Initiating Payment...'
-              : 'Waiting for Confirmation'}
+              : 'Waiting for Payment Confirmation'}
           </Text>
           <Text
             style={{
@@ -1150,38 +1193,78 @@ export default function TopUpScreen() {
           >
             {status === 'processing'
               ? paymentMethod === 'ecocash'
-                ? 'Connecting to EcoCash via Paynow...'
+                ? 'Sending EcoCash USSD push to your phone...'
                 : 'Connecting to Paynow secure checkout...'
-              : 'A payment request has been sent to your phone. Enter your EcoCash PIN to complete the transaction.'}
+              : 'A payment request has been sent to your phone.\nEnter your EcoCash PIN to complete the transaction.'}
           </Text>
 
           {paymentMethod === 'ecocash' && status === 'polling' && (
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                backgroundColor: 'rgba(255,111,0,0.08)',
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-                borderRadius: 12,
-              }}
-            >
-              <Ionicons name="phone-portrait" size={16} color={Colors.warning} />
-              <Text
+            <>
+              {/* Phone number badge */}
+              <View
                 style={{
-                  fontFamily: Fonts.semiBold,
-                  fontSize: 13,
-                  color: Colors.warning,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  backgroundColor: 'rgba(255,111,0,0.08)',
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  borderRadius: 12,
                 }}
               >
-                {phoneNumber}
-              </Text>
-            </View>
+                <Ionicons name="phone-portrait" size={16} color={Colors.warning} />
+                <Text
+                  style={{
+                    fontFamily: Fonts.semiBold,
+                    fontSize: 13,
+                    color: Colors.warning,
+                  }}
+                >
+                  {phoneNumber}
+                </Text>
+              </View>
+
+              {/* Real-time polling status */}
+              <View
+                style={{
+                  backgroundColor: 'rgba(46,125,50,0.06)',
+                  borderRadius: 14,
+                  borderCurve: 'continuous',
+                  paddingHorizontal: 18,
+                  paddingVertical: 14,
+                  gap: 10,
+                  width: '100%',
+                  maxWidth: 320,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                  <Text
+                    style={{
+                      fontFamily: Fonts.semiBold,
+                      fontSize: 13,
+                      color: Colors.textPrimary,
+                    }}
+                  >
+                    Waiting for payment confirmation...
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    fontFamily: Fonts.regular,
+                    fontSize: 12,
+                    color: Colors.textSecondary,
+                    lineHeight: 18,
+                  }}
+                >
+                  {`• Check your phone for the EcoCash USSD prompt\n• Enter your PIN to confirm $${PAYMENT_AMOUNT_USD.toFixed(2)} payment\n• If you cancel on your phone, this screen will update automatically`}
+                </Text>
+              </View>
+            </>
           )}
 
           {status === 'polling' && (
-            <View style={{ marginTop: 8, gap: 8, alignItems: 'center' }}>
+            <View style={{ marginTop: 4, gap: 8, alignItems: 'center' }}>
               <View
                 style={{
                   flexDirection: 'row',
@@ -1201,7 +1284,7 @@ export default function TopUpScreen() {
                     color: Colors.textSecondary,
                   }}
                 >
-                  Checking payment status...
+                  Polling every 5s (up to 30s timeout)
                 </Text>
               </View>
 

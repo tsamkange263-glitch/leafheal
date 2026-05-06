@@ -247,11 +247,13 @@ export async function pollTransaction(pollUrl: string): Promise<PollResult> {
   const responseText = await response.text();
   const parsed = parsePaynowResponse(responseText);
 
+  console.log('[paynow] Poll result status:', parsed.status);
   return parsed as PollResult;
 }
 
 /**
- * Check if a poll result indicates payment was successful
+ * Check if a poll result indicates payment was successful.
+ * Paynow status: "Paid"
  */
 export function isPaymentPaid(result: PollResult): boolean {
   const status = result.status?.toLowerCase();
@@ -259,7 +261,16 @@ export function isPaymentPaid(result: PollResult): boolean {
 }
 
 /**
- * Check if a poll result indicates payment is still pending
+ * Check if a poll result indicates payment is still pending/in-progress.
+ * These statuses mean the USSD push is sent but user hasn't completed or cancelled yet.
+ *
+ * Paynow statuses handled:
+ * - "sent" — USSD push sent to phone
+ * - "pending" — waiting for user action
+ * - "created" — transaction created
+ * - "awaiting delivery" — being processed
+ * - "delivered" — USSD delivered, waiting for PIN
+ * - "awaiting payment" — USSD prompt displayed, waiting for user to enter PIN
  */
 export function isPaymentPending(result: PollResult): boolean {
   const status = result.status?.toLowerCase();
@@ -268,12 +279,28 @@ export function isPaymentPending(result: PollResult): boolean {
     status === 'pending' ||
     status === 'created' ||
     status === 'awaiting delivery' ||
-    status === 'delivered'
+    status === 'delivered' ||
+    status === 'awaiting payment'
   );
 }
 
 /**
- * Check if a poll result indicates payment has failed/cancelled
+ * Check if a poll result indicates payment was cancelled by the user.
+ * Paynow status: "Cancelled" — user dismissed the USSD prompt or actively cancelled.
+ */
+export function isPaymentCancelled(result: PollResult): boolean {
+  const status = result.status?.toLowerCase();
+  return status === 'cancelled';
+}
+
+/**
+ * Check if a poll result indicates payment has definitively failed.
+ * Covers all terminal failure states from Paynow:
+ * - "failed" — payment processing failed
+ * - "cancelled" — user cancelled the USSD prompt
+ * - "disputed" — transaction disputed
+ * - "refunded" — transaction refunded
+ * - "timed out" — user did not respond to USSD prompt in time
  */
 export function isPaymentFailed(result: PollResult): boolean {
   const status = result.status?.toLowerCase();
@@ -281,8 +308,39 @@ export function isPaymentFailed(result: PollResult): boolean {
     status === 'failed' ||
     status === 'cancelled' ||
     status === 'disputed' ||
-    status === 'refunded'
+    status === 'refunded' ||
+    status === 'timed out'
   );
+}
+
+/**
+ * Check if a poll result indicates payment timed out (user ignored USSD prompt).
+ * Paynow status: "Timed out"
+ */
+export function isPaymentTimedOut(result: PollResult): boolean {
+  const status = result.status?.toLowerCase();
+  return status === 'timed out';
+}
+
+/**
+ * Get a user-friendly error message based on the Paynow status.
+ */
+export function getPaymentFailureMessage(result: PollResult): string {
+  const status = result.status?.toLowerCase();
+  switch (status) {
+    case 'cancelled':
+      return 'Payment was cancelled. You dismissed the EcoCash prompt on your phone. Please try again when ready.';
+    case 'timed out':
+      return 'Payment timed out. You did not respond to the EcoCash prompt on your phone. Please try again.';
+    case 'failed':
+      return 'Payment failed. This could be due to insufficient balance or a network issue. Please try again.';
+    case 'disputed':
+      return 'Payment was disputed. Please contact support if you believe this is an error.';
+    case 'refunded':
+      return 'Payment was refunded. Please try again or contact support.';
+    default:
+      return `Payment was not completed (status: ${result.status || 'unknown'}). Please try again.`;
+  }
 }
 
 // =============================================================================
