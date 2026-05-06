@@ -21,6 +21,8 @@ import { useAppStore } from '@/store/useAppStore';
 import {
   validateZimPhone,
   generateTransactionRef,
+  generatePaymentReference,
+  buildPaynowCheckoutUrl,
   sendEcoCashPayment,
   pollTransaction,
   isPaymentPaid,
@@ -41,9 +43,6 @@ const MAX_POLL_ATTEMPTS = 12; // 12 * 5s = 60 seconds max
 const CARD_DB_POLL_INTERVAL_MS = 4000;
 const CARD_MAX_DB_POLL_ATTEMPTS = 45; // 45 * 4s = 3 minutes max
 
-// Paynow Advanced Payment Button - hosted checkout link for Visa/Mastercard
-const PAYNOW_CARD_CHECKOUT_URL =
-  'https://www.paynow.co.zw/Payment/BillPaymentLink/?q=aWQ9MjQ1NjUmYW1vdW50PTEuMjUmYW1vdW50X3F1YW50aXR5PTAuMDAmbD0x';
 
 export default function TopUpScreen() {
   const router = useRouter();
@@ -357,16 +356,20 @@ export default function TopUpScreen() {
     }
   }, [user?.id, updateCredits, cleanupPolling]);
 
+  // Store the dynamic checkout URL for re-open functionality
+  const cardCheckoutUrlRef = useRef<string | null>(null);
+
   const handleCardPayment = async () => {
     if (!user?.id) return;
 
     setStatus('processing');
     setErrorMsg('');
 
-    const reference = generateTransactionRef(user.id);
+    // Generate unique payment reference for f1 custom field (reliable user identification)
+    const paymentRef = generatePaymentReference(user.id);
 
     try {
-      // Create payment record in database with payment_method
+      // Create payment record in database with the unique payment reference
       const { data: payment, error: insertErr } = await supabase
         .from('payments')
         .insert({
@@ -375,7 +378,7 @@ export default function TopUpScreen() {
           amount_usd: CARD_PAYMENT_AMOUNT_USD,
           scans_added: SCANS_PER_TOPUP,
           status: 'pending',
-          paynow_reference: reference,
+          paynow_reference: paymentRef, // Store the f1 reference for webhook matching
           payment_method: 'card',
         })
         .select()
@@ -388,15 +391,20 @@ export default function TopUpScreen() {
 
       cardPaymentIdRef.current = payment.id;
 
-      // Open the Paynow hosted checkout page directly in the browser
-      console.log('[topup] Opening Paynow hosted checkout URL');
+      // Build dynamic Paynow checkout URL with user reference in f1 field
+      const userEmail = user.email || profile?.email || undefined;
+      const checkoutUrl = buildPaynowCheckoutUrl(paymentRef, userEmail);
+      cardCheckoutUrlRef.current = checkoutUrl;
 
+      console.log('[topup] Opening dynamic Paynow checkout URL with ref:', paymentRef);
+
+      // Open the dynamically constructed Paynow checkout page
       if (Platform.OS === 'web') {
-        window.open(PAYNOW_CARD_CHECKOUT_URL, '_blank');
+        window.open(checkoutUrl, '_blank');
       } else {
-        const canOpen = await Linking.canOpenURL(PAYNOW_CARD_CHECKOUT_URL);
+        const canOpen = await Linking.canOpenURL(checkoutUrl);
         if (canOpen) {
-          await Linking.openURL(PAYNOW_CARD_CHECKOUT_URL);
+          await Linking.openURL(checkoutUrl);
         } else {
           throw new Error('Unable to open checkout page. Please try again.');
         }
@@ -1275,10 +1283,12 @@ export default function TopUpScreen() {
           {/* Re-open checkout in browser */}
           <Pressable
             onPress={() => {
+              const url = cardCheckoutUrlRef.current;
+              if (!url) return;
               if (Platform.OS === 'web') {
-                window.open(PAYNOW_CARD_CHECKOUT_URL, '_blank');
+                window.open(url, '_blank');
               } else {
-                Linking.openURL(PAYNOW_CARD_CHECKOUT_URL);
+                Linking.openURL(url);
               }
             }}
             style={({ pressed }) => ({

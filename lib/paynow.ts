@@ -7,6 +7,11 @@ const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/paynow-initiate`;
 // Paynow direct API URL (used for client-side card payment initiation)
 const PAYNOW_INITIATE_URL = 'https://www.paynow.co.zw/interface/initiatetransaction';
 
+// Paynow Advanced Payment Button configuration
+const PAYNOW_BUTTON_INTEGRATION_ID = '24565';
+const PAYNOW_BUTTON_AMOUNT = '1.25';
+const PAYNOW_BUTTON_BASE_URL = 'https://www.paynow.co.zw/Payment/BillPaymentLink';
+
 export interface PaynowResponse {
   status: string;
   browserurl?: string;
@@ -89,6 +94,47 @@ export function generateTransactionRef(userId?: string): string {
     return `HERBSCAN-${userShort}-${timestamp}-${random}`;
   }
   return `HERB-${timestamp}-${random}`;
+}
+
+/**
+ * Build a dynamic Paynow Advanced Payment Button checkout URL.
+ *
+ * Encodes the integration ID, amount, and a custom field (f1) containing
+ * a unique user reference (e.g. HERBSCAN-userId-timestamp) for reliable
+ * payment-to-user matching in the webhook notification.
+ *
+ * Encoding process (matches Paynow's expected format):
+ * 1. Construct arguments string with URL-encoded field values
+ * 2. Base64 encode the entire arguments string
+ * 3. URL-encode the Base64 result (replace +, /, = with URL-safe equivalents)
+ */
+export function buildPaynowCheckoutUrl(userReference: string, userEmail?: string): string {
+  // Construct the arguments string with the custom field f1
+  const args = `id=${PAYNOW_BUTTON_INTEGRATION_ID}&amount=${PAYNOW_BUTTON_AMOUNT}&f1=${encodeURIComponent(userReference)}&l=1`;
+
+  // Base64 encode the arguments string
+  const base64Encoded = btoa(args);
+
+  // URL-encode the Base64 result (handle +, /, = characters)
+  const urlSafeBase64 = encodeURIComponent(base64Encoded);
+
+  // Build the final URL, optionally including user email in the path
+  if (userEmail) {
+    return `${PAYNOW_BUTTON_BASE_URL}/${encodeURIComponent(userEmail)}?q=${urlSafeBase64}`;
+  }
+  return `${PAYNOW_BUTTON_BASE_URL}/?q=${urlSafeBase64}`;
+}
+
+/**
+ * Generate a unique payment reference for the Paynow custom field (f1).
+ * Format: HERBSCAN-{userId}-{timestamp}
+ * This is used to reliably identify the paying user in the webhook notification.
+ */
+export function generatePaymentReference(userId: string): string {
+  const timestamp = Math.floor(Date.now() / 1000); // Unix timestamp in seconds
+  // Use first 12 chars of userId (without dashes) for reasonable length
+  const userShort = userId.replace(/-/g, '').substring(0, 12);
+  return `HERBSCAN-${userShort}-${timestamp}`;
 }
 
 /**
