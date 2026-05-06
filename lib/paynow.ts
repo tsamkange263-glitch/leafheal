@@ -1,8 +1,11 @@
 import { supabase } from '@/lib/supabase';
 
-// Supabase Edge Function URL for proxying Paynow requests (avoids CORS on web)
+// Supabase Edge Function URL for proxying Paynow requests
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/paynow-initiate`;
+
+// Paynow direct API URL (used for client-side card payment initiation)
+const PAYNOW_INITIATE_URL = 'https://www.paynow.co.zw/interface/initiatetransaction';
 
 export interface PaynowResponse {
   status: string;
@@ -11,6 +14,17 @@ export interface PaynowResponse {
   hash?: string;
   error?: string;
   [key: string]: string | undefined;
+}
+
+export interface CardPaymentHashResponse {
+  status: string;
+  hash: string;
+  integration_id: string;
+  amount: string;
+  additionalinfo: string;
+  returnurl: string;
+  resulturl: string;
+  authemail: string;
 }
 
 export interface PollResult {
@@ -82,10 +96,10 @@ async function getAccessToken(): Promise<string> {
 }
 
 /**
- * Call the Paynow edge function proxy to avoid CORS issues on web.
- * The edge function handles hash generation and Paynow communication server-side.
+ * Call the Paynow edge function proxy.
+ * Used for EcoCash (server-side Paynow call) and for generating card payment hash.
  */
-async function callPaynowEdgeFunction(payload: Record<string, unknown>): Promise<PaynowResponse> {
+async function callPaynowEdgeFunction(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   const accessToken = await getAccessToken();
 
   let response: Response;
@@ -122,13 +136,7 @@ async function callPaynowEdgeFunction(payload: Record<string, unknown>): Promise
     throw new Error(errorMsg + (details ? `: ${details}` : ''));
   }
 
-  // Success response from edge function
-  return {
-    status: (responseData.status as string) || 'ok',
-    browserurl: (responseData.browserurl as string) || undefined,
-    pollurl: (responseData.pollurl as string) || undefined,
-    hash: (responseData.hash as string) || undefined,
-  };
+  return responseData;
 }
 
 /**
@@ -143,7 +151,7 @@ export async function sendEcoCashPayment(
 ): Promise<PaynowResponse> {
   const normalizedPhone = normalizePhone(phone);
 
-  const result = await callPaynowEdgeFunction({
+  const responseData = await callPaynowEdgeFunction({
     type: 'ecocash',
     amount,
     reference,
@@ -151,11 +159,112 @@ export async function sendEcoCashPayment(
     method: 'ecocash',
   });
 
+  const result: PaynowResponse = {
+    status: (responseData.status as string) || 'ok',
+    browserurl: (responseData.browserurl as string) || undefined,
+    pollurl: (responseData.pollurl as string) || undefined,
+    hash: (responseData.hash as string) || undefined,
+  };
+
   if (!result.pollurl) {
     throw new Error('No poll URL returned from payment gateway.');
   }
 
   return result;
+}
+
+/**
+ * Initiate a Visa/Mastercard payment via Paynow web checkout.
+ *
+ * Strategy: The Edge Function generates the secure hash (keeping the integration key server-side),
+ * then the client makes the POST directly to Paynow's initiatetransaction endpoint.
+ * This avoids the "Connection reset by peer" error that occurs when Supabase Edge Functions
+ * try to connect to Paynow's servers.
+ *
+ * Returns a browserurl where the user completes card payment.
+ */
+export async function initiateCardPayment(
+  amount: number,
+  reference: string,
+  _customerEmail?: string
+): Promise<PaynowResponse> {
+  // Step 1: Get the hash and payment params from the Edge Function
+  const hashData = await callPaynowEdgeFunction({
+    type: 'card',
+    amount,
+    reference,
+  });
+
+  const cardData: CardPaymentHashResponse = {
+    status: hashData.status as string,
+    hash: hashData.hash as string,
+    integration_id: hashData.integration_id as string,
+    amount: hashData.amount as string,
+    additionalinfo: hashData.additionalinfo as string,
+    returnurl: hashData.returnurl as string,
+    resulturl: hashData.resulturl as string,
+    authemail: hashData.authemail as string,
+  };
+
+  if (!cardData.hash) {
+    throw new Error('Failed to generate payment hash. Please try again.');
+  }
+
+  // Step 2: Make the direct POST to Paynow from the client
+  const formData = new URLSearchParams();
+  formData.append('id', cardData.integration_id);
+  formData.append('reference', reference);
+  formData.append('amount', cardData.amount);
+  formData.append('additionalinfo', cardData.additionalinfo);
+  formData.append('returnurl', cardData.returnurl);
+  formData.append('resulturl', cardData.resulturl);
+  formData.append('authemail', cardData.authemail);
+  formData.append('status', 'Message');
+  formData.append('hash', cardData.hash);
+
+  console.log('[paynow] Initiating card payment directly to Paynow...');
+
+  let paynowResponse: Response;
+  try {
+    paynowResponse = await fetch(PAYNOW_INITIATE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
+    });
+  } catch (networkErr: unknown) {
+    const msg = networkErr instanceof Error ? networkErr.message : 'Unknown network error';
+    console.error('[paynow] Network error connecting to Paynow directly:', msg);
+    throw new Error(
+      'Unable to connect to Paynow payment gateway. Please check your internet connection and try again.'
+    );
+  }
+
+  if (!paynowResponse.ok) {
+    const errorText = await paynowResponse.text().catch(() => '');
+    console.error(`[paynow] Paynow HTTP ${paynowResponse.status}: ${errorText}`);
+    throw new Error(`Payment gateway returned an error (HTTP ${paynowResponse.status}). Please try again.`);
+  }
+
+  const responseText = await paynowResponse.text();
+  console.log('[paynow] Paynow response:', responseText);
+
+  const parsed = parsePaynowResponse(responseText);
+
+  if (parsed.status?.toLowerCase() === 'error') {
+    throw new Error(parsed.error || 'Payment initiation failed. Please try again.');
+  }
+
+  if (parsed.status?.toLowerCase() !== 'ok') {
+    throw new Error(parsed.error || `Unexpected payment status: ${parsed.status}`);
+  }
+
+  if (!parsed.browserurl) {
+    throw new Error('No checkout URL returned from payment gateway. Please try again.');
+  }
+
+  return parsed;
 }
 
 /**
@@ -211,28 +320,20 @@ export function isPaymentFailed(result: PollResult): boolean {
 }
 
 /**
- * Initiate a standard Paynow web checkout for Visa/Mastercard payments.
- * Proxied through Supabase Edge Function to avoid CORS issues on web.
- * Returns a browserurl where the user completes card payment, and a pollurl for status checks.
+ * Check payment status by querying the payments table directly.
+ * Used as a fallback when polling Paynow directly doesn't work (e.g., CORS issues).
+ * The webhook will have updated the payment status in the database.
  */
-export async function initiateCardPayment(
-  amount: number,
-  reference: string,
-  _customerEmail?: string
-): Promise<PaynowResponse> {
-  const result = await callPaynowEdgeFunction({
-    type: 'card',
-    amount,
-    reference,
-  });
+export async function checkPaymentStatusFromDB(paymentId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('status')
+    .eq('id', paymentId)
+    .single();
 
-  if (!result.browserurl) {
-    throw new Error('No checkout URL returned from payment gateway. Please try again.');
+  if (error) {
+    throw new Error('Failed to check payment status. Please try again.');
   }
 
-  if (!result.pollurl) {
-    throw new Error('No poll URL returned from payment gateway. Please try again.');
-  }
-
-  return result;
+  return data?.status || 'pending';
 }

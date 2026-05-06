@@ -27,16 +27,19 @@ import {
   isPaymentPaid,
   isPaymentPending,
   isPaymentFailed,
+  checkPaymentStatusFromDB,
 } from '@/lib/paynow';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
-type PaymentStatus = 'idle' | 'processing' | 'polling' | 'success' | 'failed';
+type PaymentStatus = 'idle' | 'processing' | 'polling' | 'awaiting_card' | 'success' | 'failed';
 type PaymentMethod = 'ecocash' | 'card';
 
 const PAYMENT_AMOUNT_USD = 1.0;
 const SCANS_PER_TOPUP = 20;
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 12; // 12 * 5s = 60 seconds max
+const CARD_DB_POLL_INTERVAL_MS = 4000;
+const CARD_MAX_DB_POLL_ATTEMPTS = 45; // 45 * 4s = 3 minutes max
 
 export default function TopUpScreen() {
   const router = useRouter();
@@ -47,9 +50,13 @@ export default function TopUpScreen() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ecocash');
   const [status, setStatus] = useState<PaymentStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  const [isCheckingManually, setIsCheckingManually] = useState(false);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollAttemptsRef = useRef(0);
   const isCancelledRef = useRef(false);
+  const cardPaymentIdRef = useRef<string | null>(null);
+  const cardDbPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cardDbPollAttemptsRef = useRef(0);
 
   const credits = profile?.scan_credits ?? 0;
 
@@ -57,6 +64,10 @@ export default function TopUpScreen() {
     if (pollTimerRef.current) {
       clearTimeout(pollTimerRef.current);
       pollTimerRef.current = null;
+    }
+    if (cardDbPollTimerRef.current) {
+      clearTimeout(cardDbPollTimerRef.current);
+      cardDbPollTimerRef.current = null;
     }
     isCancelledRef.current = true;
   }, []);
@@ -234,6 +245,114 @@ export default function TopUpScreen() {
     }
   };
 
+  /**
+   * Start background polling of the database for card payment status.
+   * The webhook will update payment status in the DB when Paynow confirms.
+   */
+  const startCardDbPolling = useCallback(
+    (paymentId: string) => {
+      cardDbPollAttemptsRef.current = 0;
+      isCancelledRef.current = false;
+
+      const poll = async () => {
+        if (isCancelledRef.current) return;
+        cardDbPollAttemptsRef.current += 1;
+
+        try {
+          const dbStatus = await checkPaymentStatusFromDB(paymentId);
+
+          if (isCancelledRef.current) return;
+
+          if (dbStatus === 'success') {
+            // Payment confirmed via webhook - update local state
+            if (user?.id) {
+              const { data: userData } = await supabase
+                .from('users')
+                .select('scan_credits')
+                .eq('id', user.id)
+                .single();
+              if (userData) {
+                updateCredits(userData.scan_credits);
+              }
+            }
+            setStatus('success');
+            return;
+          }
+
+          if (dbStatus === 'failed') {
+            setStatus('failed');
+            setErrorMsg('Payment was declined or cancelled. Please try again.');
+            return;
+          }
+
+          // Still pending - continue polling if under limit
+          if (cardDbPollAttemptsRef.current >= CARD_MAX_DB_POLL_ATTEMPTS) {
+            // Don't fail - let the user manually check
+            return;
+          }
+
+          cardDbPollTimerRef.current = setTimeout(poll, CARD_DB_POLL_INTERVAL_MS);
+        } catch (e) {
+          console.error('Card DB poll error:', e);
+          // Continue polling on error
+          if (cardDbPollAttemptsRef.current < CARD_MAX_DB_POLL_ATTEMPTS) {
+            cardDbPollTimerRef.current = setTimeout(poll, CARD_DB_POLL_INTERVAL_MS);
+          }
+        }
+      };
+
+      poll();
+    },
+    [user?.id, updateCredits]
+  );
+
+  /**
+   * Manual status check triggered by user pressing "I've completed payment"
+   */
+  const handleManualStatusCheck = useCallback(async () => {
+    const paymentId = cardPaymentIdRef.current;
+    if (!paymentId || !user?.id) return;
+
+    setIsCheckingManually(true);
+
+    try {
+      const dbStatus = await checkPaymentStatusFromDB(paymentId);
+
+      if (dbStatus === 'success') {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('scan_credits')
+          .eq('id', user.id)
+          .single();
+        if (userData) {
+          updateCredits(userData.scan_credits);
+        }
+        cleanupPolling();
+        setStatus('success');
+      } else if (dbStatus === 'failed') {
+        cleanupPolling();
+        setStatus('failed');
+        setErrorMsg('Payment was declined or cancelled. Please try again.');
+      } else {
+        // Still pending - show a message
+        Alert.alert(
+          'Payment Not Yet Confirmed',
+          'We haven\'t received confirmation from Paynow yet. This usually takes 30-60 seconds after completing payment. Please wait a moment and try again.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (e) {
+      console.error('Manual status check error:', e);
+      Alert.alert(
+        'Check Failed',
+        'Unable to verify payment status. Please wait a moment and try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsCheckingManually(false);
+    }
+  }, [user?.id, updateCredits, cleanupPolling]);
+
   const handleCardPayment = async () => {
     if (!user?.id) return;
 
@@ -263,13 +382,15 @@ export default function TopUpScreen() {
         throw new Error('Failed to create payment record. Please try again.');
       }
 
-      // Initiate standard web checkout via edge function (avoids CORS)
+      cardPaymentIdRef.current = payment.id;
+
+      // Initiate card payment - hash generated server-side, request sent client-side
       const paynowResponse = await initiateCardPayment(
         PAYMENT_AMOUNT_USD,
         reference
       );
 
-      // Update payment record with poll URL reference
+      // Update payment record with sent status
       await supabase
         .from('payments')
         .update({
@@ -284,10 +405,8 @@ export default function TopUpScreen() {
         console.log('[topup] Opening Paynow checkout URL:', url);
 
         if (Platform.OS === 'web') {
-          // On web, open in a new tab
           window.open(url, '_blank');
         } else {
-          // On native, use Linking to open in device browser
           const canOpen = await Linking.canOpenURL(url);
           if (canOpen) {
             await Linking.openURL(url);
@@ -297,11 +416,15 @@ export default function TopUpScreen() {
         }
       }
 
-      // After browser opens, start polling for payment confirmation
-      setStatus('polling');
-      startPolling(paynowResponse.pollurl!, payment.id);
+      // Show "awaiting card payment" state and start background DB polling
+      setStatus('awaiting_card');
+      startCardDbPolling(payment.id);
+
+      // Also try direct Paynow polling if pollurl is available
+      if (paynowResponse.pollurl) {
+        startPolling(paynowResponse.pollurl, payment.id);
+      }
     } catch (e: unknown) {
-      // Extract meaningful error message from any error type
       let errorMessage = 'Failed to initiate card payment. Please try again.';
       if (e instanceof Error) {
         errorMessage = e.message;
@@ -327,6 +450,8 @@ export default function TopUpScreen() {
 
   const handleRetry = () => {
     cleanupPolling();
+    cardPaymentIdRef.current = null;
+    setIsCheckingManually(false);
     setStatus('idle');
     setErrorMsg('');
   };
@@ -942,9 +1067,7 @@ export default function TopUpScreen() {
           >
             {status === 'processing'
               ? 'Initiating Payment...'
-              : paymentMethod === 'ecocash'
-              ? 'Waiting for Confirmation'
-              : 'Verifying Card Payment'}
+              : 'Waiting for Confirmation'}
           </Text>
           <Text
             style={{
@@ -960,9 +1083,7 @@ export default function TopUpScreen() {
               ? paymentMethod === 'ecocash'
                 ? 'Connecting to EcoCash via Paynow...'
                 : 'Connecting to Paynow secure checkout...'
-              : paymentMethod === 'ecocash'
-              ? 'A payment request has been sent to your phone. Enter your EcoCash PIN to complete the transaction.'
-              : 'Checking if your card payment was completed successfully...'}
+              : 'A payment request has been sent to your phone. Enter your EcoCash PIN to complete the transaction.'}
           </Text>
 
           {paymentMethod === 'ecocash' && status === 'polling' && (
@@ -1035,6 +1156,171 @@ export default function TopUpScreen() {
               </Pressable>
             </View>
           )}
+        </Animated.View>
+      )}
+
+      {/* Awaiting Card Payment - shown after browser opens */}
+      {status === 'awaiting_card' && (
+        <Animated.View
+          entering={FadeIn.duration(500)}
+          style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingVertical: 40,
+            gap: 20,
+          }}
+        >
+          <View
+            style={{
+              width: 100,
+              height: 100,
+              borderRadius: 50,
+              backgroundColor: 'rgba(26,35,126,0.08)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="hourglass-outline" size={44} color="#1A237E" />
+          </View>
+          <Text
+            style={{
+              fontFamily: Fonts.bold,
+              fontSize: 20,
+              color: Colors.textPrimary,
+              textAlign: 'center',
+            }}
+          >
+            Waiting for Payment...
+          </Text>
+          <Text
+            style={{
+              fontFamily: Fonts.regular,
+              fontSize: 14,
+              color: Colors.textSecondary,
+              textAlign: 'center',
+              lineHeight: 22,
+              maxWidth: 300,
+            }}
+          >
+            Complete your card payment on the Paynow checkout page that opened in your browser.
+          </Text>
+
+          {/* Animated status indicator */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              backgroundColor: 'rgba(26,35,126,0.06)',
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderRadius: 12,
+            }}
+          >
+            <ActivityIndicator size="small" color="#1A237E" />
+            <Text
+              style={{
+                fontFamily: Fonts.regular,
+                fontSize: 13,
+                color: Colors.textSecondary,
+              }}
+            >
+              Listening for payment confirmation...
+            </Text>
+          </View>
+
+          {/* I've completed payment button */}
+          <Pressable
+            onPress={handleManualStatusCheck}
+            disabled={isCheckingManually}
+            style={({ pressed }) => ({
+              backgroundColor: '#1A237E',
+              paddingVertical: 16,
+              paddingHorizontal: 32,
+              borderRadius: 14,
+              borderCurve: 'continuous',
+              marginTop: 8,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              opacity: isCheckingManually ? 0.7 : pressed ? 0.9 : 1,
+            })}
+          >
+            {isCheckingManually ? (
+              <ActivityIndicator size="small" color={Colors.white} />
+            ) : (
+              <Ionicons name="checkmark-circle-outline" size={20} color={Colors.white} />
+            )}
+            <Text
+              style={{
+                fontFamily: Fonts.bold,
+                fontSize: 16,
+                color: Colors.white,
+              }}
+            >
+              {isCheckingManually ? 'Checking...' : "I've Completed Payment"}
+            </Text>
+          </Pressable>
+
+          {/* Helpful info */}
+          <View
+            style={{
+              marginTop: 12,
+              backgroundColor: 'rgba(255,111,0,0.06)',
+              borderRadius: 12,
+              borderCurve: 'continuous',
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              gap: 8,
+              width: '100%',
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="information-circle-outline" size={18} color={Colors.warning} />
+              <Text
+                style={{
+                  fontFamily: Fonts.semiBold,
+                  fontSize: 13,
+                  color: Colors.textPrimary,
+                }}
+              >
+                What to expect
+              </Text>
+            </View>
+            <Text
+              style={{
+                fontFamily: Fonts.regular,
+                fontSize: 12,
+                color: Colors.textSecondary,
+                lineHeight: 18,
+              }}
+            >
+              {'• Your browser opened the Paynow secure checkout\n• Enter your card details and confirm payment\n• Credits will be added automatically once confirmed\n• If the page didn\'t open, tap the button below'}
+            </Text>
+          </View>
+
+          {/* Re-open checkout link */}
+          <Pressable
+            onPress={() => {
+              // Try to reinitiate if needed
+              handleRetry();
+            }}
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 20,
+              marginTop: 4,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: Fonts.semiBold,
+                fontSize: 14,
+                color: Colors.error,
+              }}
+            >
+              Cancel & Try Again
+            </Text>
+          </Pressable>
         </Animated.View>
       )}
 
