@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -29,15 +29,19 @@ import {
   isPaymentPending,
   isPaymentFailed,
   checkPaymentStatusFromDB,
+  getPaymentConfig,
+  type PaymentConfig,
 } from '@/lib/paynow';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 type PaymentStatus = 'idle' | 'processing' | 'polling' | 'awaiting_card' | 'success' | 'failed';
 type PaymentMethod = 'ecocash' | 'card';
 
-const PAYMENT_AMOUNT_USD = 1.0;
-const CARD_PAYMENT_AMOUNT_USD = 1.25; // Includes Paynow fees for card payments
-const SCANS_PER_TOPUP = 20;
+// Fallback defaults (used while config is loading)
+const DEFAULT_PAYMENT_AMOUNT_USD = 1.0;
+const DEFAULT_CARD_PAYMENT_AMOUNT_USD = 1.25;
+const DEFAULT_SCANS_PER_TOPUP = 20;
+
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 12; // 12 * 5s = 60 seconds max
 const CARD_DB_POLL_INTERVAL_MS = 4000;
@@ -54,6 +58,8 @@ export default function TopUpScreen() {
   const [status, setStatus] = useState<PaymentStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [isCheckingManually, setIsCheckingManually] = useState(false);
+  const [paymentConfig, setPaymentConfig] = useState<PaymentConfig | null>(null);
+  const [configLoading, setConfigLoading] = useState(true);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollAttemptsRef = useRef(0);
   const isCancelledRef = useRef(false);
@@ -62,6 +68,34 @@ export default function TopUpScreen() {
   const cardDbPollAttemptsRef = useRef(0);
 
   const credits = profile?.scan_credits ?? 0;
+
+  // Derived config values (use fetched config or fallback defaults)
+  const CARD_PAYMENT_AMOUNT_USD = paymentConfig
+    ? parseFloat(paymentConfig.paynow_amount)
+    : DEFAULT_CARD_PAYMENT_AMOUNT_USD;
+  const SCANS_PER_TOPUP = paymentConfig?.scans_per_payment ?? DEFAULT_SCANS_PER_TOPUP;
+  const PAYMENT_AMOUNT_USD = DEFAULT_PAYMENT_AMOUNT_USD;
+
+  // Fetch payment configuration from database on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function loadConfig() {
+      try {
+        const config = await getPaymentConfig();
+        if (!cancelled) {
+          setPaymentConfig(config);
+        }
+      } catch (err) {
+        console.error('[topup] Failed to load payment config:', err);
+      } finally {
+        if (!cancelled) {
+          setConfigLoading(false);
+        }
+      }
+    }
+    loadConfig();
+    return () => { cancelled = true; };
+  }, []);
 
   const cleanupPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -172,7 +206,7 @@ export default function TopUpScreen() {
       // Start first poll
       poll();
     },
-    [credits, user?.id, updateCredits]
+    [credits, user?.id, updateCredits, SCANS_PER_TOPUP]
   );
 
   const handleEcoCashPayment = async () => {
@@ -392,8 +426,14 @@ export default function TopUpScreen() {
       cardPaymentIdRef.current = payment.id;
 
       // Build dynamic Paynow checkout URL with user reference in f1 field
+      // Uses integration ID and amount from app_config table
       const userEmail = user.email || profile?.email || undefined;
-      const checkoutUrl = buildPaynowCheckoutUrl(paymentRef, userEmail);
+      const config = paymentConfig ?? {
+        paynow_integration_id: '24565',
+        paynow_amount: String(CARD_PAYMENT_AMOUNT_USD),
+        scans_per_payment: SCANS_PER_TOPUP,
+      };
+      const checkoutUrl = buildPaynowCheckoutUrl(paymentRef, config, userEmail);
       cardCheckoutUrlRef.current = checkoutUrl;
 
       console.log('[topup] Opening dynamic Paynow checkout URL with ref:', paymentRef);
@@ -504,6 +544,13 @@ export default function TopUpScreen() {
 
       {status === 'idle' && (
         <>
+          {/* Config loading indicator */}
+          {configLoading && (
+            <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+            </View>
+          )}
+
           {/* Pricing card */}
           <Animated.View
             entering={FadeInDown.duration(500)}
@@ -537,7 +584,7 @@ export default function TopUpScreen() {
                 fontVariant: ['tabular-nums'],
               }}
             >
-              $1.00
+              ${PAYMENT_AMOUNT_USD.toFixed(2)}
             </Text>
             <Text
               style={{
@@ -546,7 +593,7 @@ export default function TopUpScreen() {
                 color: 'rgba(255,255,255,0.9)',
               }}
             >
-              20 Plant Scans
+              {SCANS_PER_TOPUP} Plant Scans
             </Text>
             <Text
               style={{
@@ -720,7 +767,7 @@ export default function TopUpScreen() {
                       marginTop: 1,
                     }}
                   >
-                    $1.25 via Paynow secure checkout
+                    ${CARD_PAYMENT_AMOUNT_USD.toFixed(2)} via Paynow secure checkout
                   </Text>
                 </View>
                 <View
@@ -875,7 +922,7 @@ export default function TopUpScreen() {
                     color: '#1A237E',
                   }}
                 >
-                  Card total: $1.25 (includes payment processing fees)
+                  Card total: ${CARD_PAYMENT_AMOUNT_USD.toFixed(2)} (includes payment processing fees)
                 </Text>
               </View>
             </Animated.View>
@@ -936,7 +983,7 @@ export default function TopUpScreen() {
                   { step: '1', text: 'Enter your EcoCash mobile number' },
                   { step: '2', text: 'Tap "Pay with EcoCash"' },
                   { step: '3', text: 'Enter your EcoCash PIN on the USSD prompt' },
-                  { step: '4', text: '20 scan credits added instantly!' },
+                  { step: '4', text: `${SCANS_PER_TOPUP} scan credits added instantly!` },
                 ].map((item, i) => (
                   <View
                     key={i}
@@ -980,8 +1027,8 @@ export default function TopUpScreen() {
               : [
                   { step: '1', text: 'Tap "Pay with Card" to open Paynow checkout' },
                   { step: '2', text: 'Enter your Visa/Mastercard details securely' },
-                  { step: '3', text: 'Confirm the $1.25 payment (includes fees)' },
-                  { step: '4', text: '20 scan credits added automatically!' },
+                  { step: '3', text: `Confirm the $${CARD_PAYMENT_AMOUNT_USD.toFixed(2)} payment (includes fees)` },
+                  { step: '4', text: `${SCANS_PER_TOPUP} scan credits added automatically!` },
                 ].map((item, i) => (
                   <View
                     key={i}
@@ -1220,7 +1267,7 @@ export default function TopUpScreen() {
               maxWidth: 300,
             }}
           >
-            Complete your $1.25 card payment on the Paynow checkout page that opened in your browser.
+            {`Complete your $${CARD_PAYMENT_AMOUNT_USD.toFixed(2)} card payment on the Paynow checkout page that opened in your browser.`}
           </Text>
 
           {/* Animated status indicator */}
@@ -1345,7 +1392,7 @@ export default function TopUpScreen() {
                 lineHeight: 18,
               }}
             >
-              {'• Your browser opened the Paynow secure checkout\n• Enter your Visa/Mastercard details and confirm $1.25\n• Credits will be added automatically once confirmed\n• Tap "I\'ve Completed Payment" to check your balance'}
+              {`• Your browser opened the Paynow secure checkout\n• Enter your Visa/Mastercard details and confirm $${CARD_PAYMENT_AMOUNT_USD.toFixed(2)}\n• Credits will be added automatically once confirmed\n• Tap "I've Completed Payment" to check your balance`}
             </Text>
           </View>
 

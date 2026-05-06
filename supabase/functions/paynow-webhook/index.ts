@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const SCANS_PER_TOPUP = 20;
+// Default fallback if config fetch fails
+const DEFAULT_SCANS_PER_TOPUP = 20;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -80,6 +81,35 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Fetch scans_per_payment from app_config table (dynamic configuration)
+    let scansPerTopup = DEFAULT_SCANS_PER_TOPUP;
+    try {
+      const { data: configData, error: configError } = await supabase
+        .from("app_config")
+        .select("value")
+        .eq("key", "scans_per_payment")
+        .single();
+
+      if (!configError && configData?.value) {
+        const parsed = parseInt(configData.value, 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          scansPerTopup = parsed;
+          console.log(
+            `[paynow-webhook] Using configured scans_per_payment: ${scansPerTopup}`
+          );
+        }
+      } else {
+        console.warn(
+          `[paynow-webhook] Could not fetch scans_per_payment config, using default: ${DEFAULT_SCANS_PER_TOPUP}`
+        );
+      }
+    } catch (configErr) {
+      console.warn(
+        `[paynow-webhook] Error fetching config, using default: ${DEFAULT_SCANS_PER_TOPUP}`,
+        configErr
+      );
+    }
 
     let paymentRecord: Record<string, unknown> | null = null;
     let userId: string | null = null;
@@ -200,7 +230,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const newCredits = (userData.scan_credits || 0) + SCANS_PER_TOPUP;
+    const newCredits = (userData.scan_credits || 0) + scansPerTopup;
     const { error: creditError } = await supabase
       .from("users")
       .update({ scan_credits: newCredits })
@@ -213,7 +243,7 @@ Deno.serve(async (req: Request) => {
       );
     } else {
       console.log(
-        `[paynow-webhook] User ${userId} credited with ${SCANS_PER_TOPUP} scans. New balance: ${newCredits}`
+        `[paynow-webhook] User ${userId} credited with ${scansPerTopup} scans. New balance: ${newCredits}`
       );
     }
 

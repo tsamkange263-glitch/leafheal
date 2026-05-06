@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { PaymentConfig } from '@/lib/app-config';
 
 // Supabase Edge Function URL for proxying Paynow requests
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
@@ -7,9 +8,7 @@ const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/paynow-initiate`;
 // Paynow direct API URL (used for client-side card payment initiation)
 const PAYNOW_INITIATE_URL = 'https://www.paynow.co.zw/interface/initiatetransaction';
 
-// Paynow Advanced Payment Button configuration
-const PAYNOW_BUTTON_INTEGRATION_ID = '24565';
-const PAYNOW_BUTTON_AMOUNT = '1.25';
+// Paynow Advanced Payment Button base URL (static)
 const PAYNOW_BUTTON_BASE_URL = 'https://www.paynow.co.zw/Payment/BillPaymentLink';
 
 export interface PaynowResponse {
@@ -99,6 +98,7 @@ export function generateTransactionRef(userId?: string): string {
 /**
  * Build a dynamic Paynow Advanced Payment Button checkout URL.
  *
+ * Uses integration ID and amount from the app_config table (passed in as config).
  * Encodes the integration ID, amount, and a custom field (f1) containing
  * a unique user reference (e.g. HERBSCAN-userId-timestamp) for reliable
  * payment-to-user matching in the webhook notification.
@@ -108,9 +108,13 @@ export function generateTransactionRef(userId?: string): string {
  * 2. Base64 encode the entire arguments string
  * 3. URL-encode the Base64 result (replace +, /, = with URL-safe equivalents)
  */
-export function buildPaynowCheckoutUrl(userReference: string, userEmail?: string): string {
-  // Construct the arguments string with the custom field f1
-  const args = `id=${PAYNOW_BUTTON_INTEGRATION_ID}&amount=${PAYNOW_BUTTON_AMOUNT}&f1=${encodeURIComponent(userReference)}&l=1`;
+export function buildPaynowCheckoutUrl(
+  userReference: string,
+  config: PaymentConfig,
+  userEmail?: string
+): string {
+  // Construct the arguments string with the custom field f1 using dynamic config
+  const args = `id=${config.paynow_integration_id}&amount=${config.paynow_amount}&f1=${encodeURIComponent(userReference)}&l=1`;
 
   // Base64 encode the arguments string
   const base64Encoded = btoa(args);
@@ -124,6 +128,12 @@ export function buildPaynowCheckoutUrl(userReference: string, userEmail?: string
   }
   return `${PAYNOW_BUTTON_BASE_URL}/?q=${urlSafeBase64}`;
 }
+
+/**
+ * Fetch the current payment configuration from the database.
+ * Re-exported for convenience from this module.
+ */
+export { getPaymentConfig, type PaymentConfig } from '@/lib/app-config';
 
 /**
  * Generate a unique payment reference for the Paynow custom field (f1).

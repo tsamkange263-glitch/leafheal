@@ -12,6 +12,27 @@ export type Database = {
   };
   public: {
     Tables: {
+      app_config: {
+        Row: {
+          id: string;
+          key: string;
+          value: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          key: string;
+          value: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          key?: string;
+          value?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       archived_remedies: {
         Row: {
           created_at: string;
