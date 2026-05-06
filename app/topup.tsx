@@ -30,6 +30,7 @@ import {
   isPaymentFailed,
   checkPaymentStatusFromDB,
   getPaymentConfig,
+  getEcoCashAmount,
   type PaymentConfig,
 } from '@/lib/paynow';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
@@ -38,12 +39,12 @@ type PaymentStatus = 'idle' | 'processing' | 'polling' | 'awaiting_card' | 'succ
 type PaymentMethod = 'ecocash' | 'card';
 
 // Fallback defaults (used while config is loading)
-const DEFAULT_PAYMENT_AMOUNT_USD = 1.0;
 const DEFAULT_CARD_PAYMENT_AMOUNT_USD = 1.25;
 const DEFAULT_SCANS_PER_TOPUP = 20;
 
+// EcoCash polling: 6 attempts × 5 seconds = 30 seconds max (Truckit proven config)
 const POLL_INTERVAL_MS = 5000;
-const MAX_POLL_ATTEMPTS = 12; // 12 * 5s = 60 seconds max
+const MAX_POLL_ATTEMPTS = 6; // 6 * 5s = 30 seconds max
 const CARD_DB_POLL_INTERVAL_MS = 4000;
 const CARD_MAX_DB_POLL_ATTEMPTS = 45; // 45 * 4s = 3 minutes max
 
@@ -74,7 +75,8 @@ export default function TopUpScreen() {
     ? parseFloat(paymentConfig.paynow_amount)
     : DEFAULT_CARD_PAYMENT_AMOUNT_USD;
   const SCANS_PER_TOPUP = paymentConfig?.scans_per_payment ?? DEFAULT_SCANS_PER_TOPUP;
-  const PAYMENT_AMOUNT_USD = DEFAULT_PAYMENT_AMOUNT_USD;
+  // EcoCash amount is fixed at $1.25 (from paynow.ts, Truckit proven config)
+  const PAYMENT_AMOUNT_USD = getEcoCashAmount();
 
   // Fetch payment configuration from database on mount
   useEffect(() => {
@@ -217,7 +219,7 @@ export default function TopUpScreen() {
     if (!validateZimPhone(cleanedPhone)) {
       Alert.alert(
         'Invalid Number',
-        'Please enter a valid EcoCash number in format: 07XXXXXXXX or 263XXXXXXXXX'
+        'Please enter a valid EcoCash number (077/078 prefix). Format: 07XXXXXXXX or 2637XXXXXXXX'
       );
       return;
     }
@@ -225,7 +227,10 @@ export default function TopUpScreen() {
     setStatus('processing');
     setErrorMsg('');
 
-    const reference = generateTransactionRef(user.id);
+    // Generate transaction reference using customer name (Truckit format)
+    // Use user email prefix or user id as the "customer name"
+    const customerName = user.email?.split('@')[0] || user.id.replace(/-/g, '');
+    const reference = generateTransactionRef(customerName);
 
     try {
       // Create payment record in database first
@@ -245,27 +250,30 @@ export default function TopUpScreen() {
 
       if (insertErr) throw insertErr;
 
-      // Send EcoCash payment request to Paynow via Edge Function
-      const paynowResponse = await sendEcoCashPayment(
-        PAYMENT_AMOUNT_USD,
-        cleanedPhone,
-        reference
-      );
+      // Send EcoCash payment DIRECTLY to Paynow (Truckit proven approach - no Edge Function)
+      const result = await sendEcoCashPayment(cleanedPhone, reference);
 
-      // Update payment record with poll URL for tracking
-      if (paynowResponse.pollurl) {
+      if (!result.success || !result.pollUrl) {
+        // Update payment status to failed
         await supabase
           .from('payments')
-          .update({
-            status: 'sent',
-            paynow_reference: paynowResponse.browserurl || reference,
-          })
+          .update({ status: 'failed' })
           .eq('id', payment.id);
+
+        setStatus('failed');
+        setErrorMsg(result.error || 'Payment initiation failed. Please try again.');
+        return;
       }
 
-      // Payment request sent successfully - start polling
+      // Update payment record to 'sent' status
+      await supabase
+        .from('payments')
+        .update({ status: 'sent' })
+        .eq('id', payment.id);
+
+      // Payment request sent successfully - start polling (6 attempts × 5s = 30s)
       setStatus('polling');
-      startPolling(paynowResponse.pollurl!, payment.id);
+      startPolling(result.pollUrl, payment.id);
     } catch (e: unknown) {
       let errorMessage = 'Failed to initiate payment. Please check your number and try again.';
       if (e instanceof Error) {
