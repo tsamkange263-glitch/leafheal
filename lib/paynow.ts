@@ -110,8 +110,7 @@ export function generateTransactionRef(userId?: string): string {
  */
 export function buildPaynowCheckoutUrl(
   userReference: string,
-  config: PaymentConfig,
-  userEmail?: string
+  config: PaymentConfig
 ): string {
   // Construct the arguments string with the custom field f1 using dynamic config
   const args = `id=${config.paynow_integration_id}&amount=${config.paynow_amount}&f1=${encodeURIComponent(userReference)}&l=1`;
@@ -122,10 +121,7 @@ export function buildPaynowCheckoutUrl(
   // URL-encode the Base64 result (handle +, /, = characters)
   const urlSafeBase64 = encodeURIComponent(base64Encoded);
 
-  // Build the final URL, optionally including user email in the path
-  if (userEmail) {
-    return `${PAYNOW_BUTTON_BASE_URL}/${encodeURIComponent(userEmail)}?q=${urlSafeBase64}`;
-  }
+  // Build the final URL — no email in path so the customer enters their own on checkout
   return `${PAYNOW_BUTTON_BASE_URL}/?q=${urlSafeBase64}`;
 }
 
