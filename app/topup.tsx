@@ -53,7 +53,7 @@ export default function TopUpScreen() {
 
   const credits = profile?.scan_credits ?? 0;
 
-  // Derived config values
+  // Derived config values — amount comes from app_config database table
   const PAYMENT_AMOUNT_USD = paymentConfig
     ? parseFloat(paymentConfig.paynow_ecocash_amount)
     : DEFAULT_ECOCASH_AMOUNT_USD;
@@ -110,13 +110,12 @@ export default function TopUpScreen() {
           // PAID: Payment confirmed
           if (result.paid) {
             console.log('[paynow] Payment confirmed as PAID');
-            // Update payment record
             await supabase
               .from('payments')
               .update({ status: 'success' })
               .eq('id', paymentId);
 
-            // Credit user account
+            // Credit user account with scans from app_config
             if (user?.id) {
               const newCredits = credits + SCANS_PER_TOPUP;
               await supabase
@@ -130,7 +129,7 @@ export default function TopUpScreen() {
             return;
           }
 
-          // CANCELLED or FAILED: Terminal states — stop polling immediately
+          // CANCELLED or FAILED: Terminal — stop polling immediately
           const statusLower = result.status.toLowerCase();
           if (statusLower === 'cancelled' || statusLower === 'failed') {
             console.log('[paynow] Payment terminal status:', result.status);
@@ -146,7 +145,6 @@ export default function TopUpScreen() {
 
           // Still pending — continue polling if under limit
           if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
-            // All attempts exhausted
             await supabase
               .from('payments')
               .update({ status: 'timeout' })
@@ -174,7 +172,7 @@ export default function TopUpScreen() {
         }
       };
 
-      // Start first poll after 5 seconds (give user time to enter PIN)
+      // Start first poll after 5 seconds (give user time to see USSD prompt)
       pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
     },
     [credits, user?.id, updateCredits, SCANS_PER_TOPUP]
@@ -194,12 +192,12 @@ export default function TopUpScreen() {
     setStatus('processing');
     setErrorMsg('');
 
-    // Generate transaction reference
+    // Generate transaction reference from user name
     const customerName = user.email?.split('@')[0] || user.id.replace(/-/g, '');
     const reference = generateTransactionRef(customerName);
 
     try {
-      // Create payment record in database first
+      // Create payment record in database
       const { data: payment, error: insertErr } = await supabase
         .from('payments')
         .insert({
@@ -216,22 +214,22 @@ export default function TopUpScreen() {
 
       if (insertErr) throw insertErr;
 
-      // Send EcoCash payment via Paynow
+      // Send EcoCash payment via Paynow — amount from app_config table
       const result = await sendEcoCashPayment(PAYMENT_AMOUNT_USD, cleanedPhone, reference);
 
       if (!result.success || !result.pollUrl) {
-        // Payment initiation failed — "Transaction Fail"
+        // Payment initiation failed
         await supabase
           .from('payments')
           .update({ status: 'failed' })
           .eq('id', payment.id);
 
         setStatus('failed');
-        setErrorMsg(result.error || 'Transaction Fail');
+        setErrorMsg(result.error || 'Transaction failed. Please try again.');
         return;
       }
 
-      // Payment request sent — update status and start polling
+      // Payment request sent successfully — update DB and start polling
       await supabase
         .from('payments')
         .update({ status: 'sent' })
@@ -670,7 +668,7 @@ export default function TopUpScreen() {
                 </Text>
               </View>
 
-              {/* Polling status */}
+              {/* Polling status info */}
               <View
                 style={{
                   backgroundColor: 'rgba(46,125,50,0.06)',
@@ -884,7 +882,7 @@ export default function TopUpScreen() {
               lineHeight: 21,
             }}
           >
-            {errorMsg || 'Transaction Fail'}
+            {errorMsg || 'Something went wrong. Please try again.'}
           </Text>
 
           <Pressable

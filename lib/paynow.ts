@@ -140,7 +140,7 @@ export async function sendEcoCashPayment(
 ): Promise<PaynowPaymentResult> {
   const normalizedPhone = normalizePhone(phone);
   const amountStr = amount.toFixed(2);
-  const additionalInfo = "Payment";
+  const additionalInfo = "Plant Scan Credits";
   const status = "Message";
   const method = "ecocash";
 
