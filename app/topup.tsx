@@ -33,7 +33,7 @@ type PaymentStatus = 'idle' | 'processing' | 'polling' | 'success' | 'failed';
 type PaymentMethod = 'ecocash' | 'card';
 
 const PAYMENT_AMOUNT_USD = 1.0;
-const SCANS_PER_TOPUP = 12;
+const SCANS_PER_TOPUP = 20;
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 12; // 12 * 5s = 60 seconds max
 
@@ -189,6 +189,7 @@ export default function TopUpScreen() {
           scans_added: SCANS_PER_TOPUP,
           status: 'pending',
           paynow_reference: reference,
+          payment_method: 'ecocash',
         })
         .select()
         .single();
@@ -234,10 +235,9 @@ export default function TopUpScreen() {
     setErrorMsg('');
 
     const reference = generateTransactionRef();
-    const userEmail = user.email || '';
 
     try {
-      // Create payment record in database
+      // Create payment record in database with payment_method
       const { data: payment, error: insertErr } = await supabase
         .from('payments')
         .insert({
@@ -247,29 +247,29 @@ export default function TopUpScreen() {
           scans_added: SCANS_PER_TOPUP,
           status: 'pending',
           paynow_reference: reference,
+          payment_method: 'card',
         })
         .select()
         .single();
 
       if (insertErr) throw insertErr;
 
-      // Initiate standard web checkout
+      // Initiate standard web checkout - uses merchant email internally
       const paynowResponse = await initiateCardPayment(
         PAYMENT_AMOUNT_USD,
-        reference,
-        userEmail
+        reference
       );
 
-      // Update payment record
+      // Update payment record with poll URL reference
       await supabase
         .from('payments')
         .update({
           status: 'sent',
-          paynow_reference: paynowResponse.browserurl || reference,
+          paynow_reference: reference,
         })
         .eq('id', payment.id);
 
-      // Open the Paynow checkout page in browser
+      // Open the Paynow checkout page in browser for user to enter card details
       if (paynowResponse.browserurl) {
         await WebBrowser.openBrowserAsync(paynowResponse.browserurl, {
           dismissButtonStyle: 'done',
@@ -400,7 +400,7 @@ export default function TopUpScreen() {
                 color: 'rgba(255,255,255,0.9)',
               }}
             >
-              12 Plant Scans
+              20 Plant Scans
             </Text>
             <Text
               style={{
@@ -409,7 +409,7 @@ export default function TopUpScreen() {
                 color: 'rgba(255,255,255,0.6)',
               }}
             >
-              ~$0.08 per identification
+              ~$0.05 per identification
             </Text>
 
             {/* Current balance */}
@@ -767,7 +767,7 @@ export default function TopUpScreen() {
                   { step: '1', text: 'Enter your EcoCash mobile number' },
                   { step: '2', text: 'Tap "Pay with EcoCash"' },
                   { step: '3', text: 'Enter your EcoCash PIN on the USSD prompt' },
-                  { step: '4', text: '12 scan credits added instantly!' },
+                  { step: '4', text: '20 scan credits added instantly!' },
                 ].map((item, i) => (
                   <View
                     key={i}
@@ -812,7 +812,7 @@ export default function TopUpScreen() {
                   { step: '1', text: 'Tap "Pay with Card"' },
                   { step: '2', text: 'Enter your Visa/Mastercard details on Paynow' },
                   { step: '3', text: 'Confirm the $1.00 payment' },
-                  { step: '4', text: '12 scan credits added instantly!' },
+                  { step: '4', text: '20 scan credits added instantly!' },
                 ].map((item, i) => (
                   <View
                     key={i}
@@ -1051,7 +1051,7 @@ export default function TopUpScreen() {
               textAlign: 'center',
             }}
           >
-            12 scan credits have been added to your account
+            20 scan credits have been added to your account
           </Text>
           <View
             style={{

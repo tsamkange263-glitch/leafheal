@@ -57,6 +57,7 @@ export type Database = {
           created_at: string;
           ecocash_number: string | null;
           id: string;
+          payment_method: string | null;
           paynow_reference: string | null;
           scans_added: number;
           status: string;
@@ -67,6 +68,7 @@ export type Database = {
           created_at?: string;
           ecocash_number?: string | null;
           id?: string;
+          payment_method?: string | null;
           paynow_reference?: string | null;
           scans_added: number;
           status?: string;
@@ -77,6 +79,7 @@ export type Database = {
           created_at?: string;
           ecocash_number?: string | null;
           id?: string;
+          payment_method?: string | null;
           paynow_reference?: string | null;
           scans_added?: number;
           status?: string;
@@ -142,6 +145,7 @@ export type Database = {
       users: {
         Row: {
           created_at: string;
+          email: string | null;
           full_name: string | null;
           id: string;
           phone: string | null;
@@ -149,6 +153,7 @@ export type Database = {
         };
         Insert: {
           created_at?: string;
+          email?: string | null;
           full_name?: string | null;
           id: string;
           phone?: string | null;
@@ -156,6 +161,7 @@ export type Database = {
         };
         Update: {
           created_at?: string;
+          email?: string | null;
           full_name?: string | null;
           id?: string;
           phone?: string | null;

@@ -222,70 +222,84 @@ export function isPaymentFailed(result: PollResult): boolean {
 /**
  * Initiate a standard Paynow web checkout for Visa/Mastercard payments.
  * Returns a browserurl where the user completes card payment, and a pollurl for status checks.
+ *
+ * NOTE: The `authemail` must be the merchant's registered email (PAYNOW_MERCHANT_EMAIL),
+ * NOT the customer's email. Paynow validates this against the integration account.
  */
 export async function initiateCardPayment(
   amount: number,
   reference: string,
-  email: string
+  _customerEmail?: string
 ): Promise<PaynowResponse> {
   const amountStr = amount.toFixed(2);
+  const additionalInfo = `HerbScan Top Up - ${reference}`;
 
-  // Build the values array for hash generation
-  // Order: id, reference, amount, additionalinfo, returnurl, resulturl, authemail, status
+  // Hash values must match the exact order of form fields sent to Paynow:
+  // id, reference, amount, additionalinfo, returnurl, resulturl, authemail, status
   const hashValues = [
     PAYNOW_INTEGRATION_ID,
     reference,
     amountStr,
-    `HerbScan Top Up - ${reference}`,
+    additionalInfo,
     PAYNOW_RETURN_URL,
     PAYNOW_RESULT_URL,
-    email || PAYNOW_MERCHANT_EMAIL,
+    PAYNOW_MERCHANT_EMAIL,
     'Message',
   ];
 
   const hash = await generateHash(hashValues);
 
   // Build form data for standard initiate transaction
+  // authemail MUST be the merchant's registered email for Paynow to accept the request
   const formData = new URLSearchParams();
   formData.append('id', PAYNOW_INTEGRATION_ID);
   formData.append('reference', reference);
   formData.append('amount', amountStr);
-  formData.append('additionalinfo', `HerbScan Top Up - ${reference}`);
+  formData.append('additionalinfo', additionalInfo);
   formData.append('returnurl', PAYNOW_RETURN_URL);
   formData.append('resulturl', PAYNOW_RESULT_URL);
-  formData.append('authemail', email || PAYNOW_MERCHANT_EMAIL);
+  formData.append('authemail', PAYNOW_MERCHANT_EMAIL);
   formData.append('status', 'Message');
   formData.append('hash', hash);
 
-  const response = await fetch(PAYNOW_INITIATE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: formData.toString(),
-  });
+  let response: Response;
+  try {
+    response = await fetch(PAYNOW_INITIATE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
+    });
+  } catch (networkErr) {
+    throw new Error(
+      'Network error connecting to payment gateway. Please check your internet connection and try again.'
+    );
+  }
 
   if (!response.ok) {
-    throw new Error(`Paynow request failed with status ${response.status}`);
+    throw new Error(`Paynow request failed with HTTP status ${response.status}. Please try again.`);
   }
 
   const responseText = await response.text();
   const parsed = parsePaynowResponse(responseText);
 
   if (parsed.status?.toLowerCase() === 'error') {
-    throw new Error(parsed.error || 'Payment initiation failed. Please try again.');
+    const errorDetail = parsed.error || 'Unknown error';
+    throw new Error(`Payment gateway error: ${errorDetail}`);
   }
 
   if (parsed.status?.toLowerCase() !== 'ok') {
-    throw new Error(parsed.error || `Unexpected response: ${parsed.status}`);
+    const errorDetail = parsed.error || `Unexpected status: ${parsed.status}`;
+    throw new Error(`Payment initiation failed: ${errorDetail}`);
   }
 
   if (!parsed.browserurl) {
-    throw new Error('No browser URL returned from payment gateway.');
+    throw new Error('No checkout URL returned from payment gateway. Please try again.');
   }
 
   if (!parsed.pollurl) {
-    throw new Error('No poll URL returned from payment gateway.');
+    throw new Error('No poll URL returned from payment gateway. Please try again.');
   }
 
   return parsed;
