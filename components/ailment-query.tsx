@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,10 @@ import { useTextGeneration } from '@fastshot/ai';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
-import { getHerbalReferenceContext } from '@/lib/herbal-reference';
+import { getTargetedPlantReference } from '@/lib/herbal-reference';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+
+const AILMENT_QUERY_TIMEOUT_MS = 30000; // 30 seconds
 
 interface AilmentResponse {
   id: string;
@@ -41,15 +43,15 @@ function buildPrompt(
   plantName: string,
   scientificName: string | null,
   condition: string,
-  herbalContext?: string
+  targetedReference?: string
 ): string {
   const plantRef = scientificName
     ? `${plantName} (${scientificName})`
     : plantName;
 
-  // Keep reference data short to avoid exceeding API prompt limits
-  const referenceSection = herbalContext
-    ? `\n\nHerbal reference data (use to enhance your response if relevant):\n${herbalContext.substring(0, 3000)}`
+  // Only include targeted reference data for this specific plant (much smaller than full DB)
+  const referenceSection = targetedReference
+    ? `\n\nRelevant herbal reference excerpts for ${plantName}:\n${targetedReference.substring(0, 2000)}`
     : '';
 
   return sanitizeForPrompt(
@@ -71,37 +73,88 @@ export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
   const [query, setQuery] = useState('');
   const [responses, setResponses] = useState<AilmentResponse[]>([]);
   const [isQuerying, setIsQuerying] = useState(false);
+  const [showCancelHint, setShowCancelHint] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelledRef = useRef(false);
   const { generateText } = useTextGeneration();
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (cancelTimerRef.current) clearTimeout(cancelTimerRef.current);
+    };
+  }, []);
+
+  // Helper: wrap a promise with timeout
+  function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Request timed out after ${ms / 1000} seconds`));
+      }, ms);
+      promise
+        .then((result) => { clearTimeout(timer); resolve(result); })
+        .catch((err) => { clearTimeout(timer); reject(err); });
+    });
+  }
+
+  const handleCancelQuery = () => {
+    cancelledRef.current = true;
+    setIsQuerying(false);
+    setShowCancelHint(false);
+    if (cancelTimerRef.current) {
+      clearTimeout(cancelTimerRef.current);
+      cancelTimerRef.current = null;
+    }
+  };
 
   const handleSubmitQuery = async () => {
     const trimmedQuery = query.trim();
     if (!trimmedQuery || isQuerying) return;
 
     setIsQuerying(true);
+    setShowCancelHint(false);
+    cancelledRef.current = false;
     const currentQuery = trimmedQuery;
     setQuery('');
 
+    // Show cancel hint after 10 seconds
+    cancelTimerRef.current = setTimeout(() => {
+      setShowCancelHint(true);
+    }, 10000);
+
     try {
-      // Get herbal reference context for cross-referencing
-      let herbalContext = '';
+      // Get targeted reference data for this specific plant (much faster than full DB)
+      let targetedReference = '';
       try {
-        herbalContext = await getHerbalReferenceContext();
+        targetedReference = await getTargetedPlantReference(plantName, scientificName);
       } catch {
         // Continue without reference data
       }
 
-      // Build prompt with herbal context (kept short to avoid 422 validation errors)
-      const prompt = buildPrompt(plantName, scientificName, currentQuery, herbalContext);
+      if (cancelledRef.current) return;
 
-      // Use the hook's generateText which takes prompt string directly
-      let result = await generateText(prompt, { temperature: 0.7 });
+      // Build prompt with targeted reference context
+      const prompt = buildPrompt(plantName, scientificName, currentQuery, targetedReference);
 
-      // Fallback: retry without herbal context if first attempt fails
-      if (!result && herbalContext) {
+      // Use the hook's generateText with timeout
+      let result = await withTimeout(
+        generateText(prompt, { temperature: 0.7 }),
+        AILMENT_QUERY_TIMEOUT_MS
+      );
+
+      if (cancelledRef.current) return;
+
+      // Fallback: retry without reference if first attempt fails
+      if (!result && targetedReference) {
         const fallbackPrompt = buildPrompt(plantName, scientificName, currentQuery);
-        result = await generateText(fallbackPrompt, { temperature: 0.7 });
+        result = await withTimeout(
+          generateText(fallbackPrompt, { temperature: 0.7 }),
+          AILMENT_QUERY_TIMEOUT_MS
+        );
       }
+
+      if (cancelledRef.current) return;
 
       if (result) {
         const newResponse: AilmentResponse = {
@@ -114,40 +167,57 @@ export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
       } else {
         throw new Error('No response received from AI');
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (cancelledRef.current) return;
       console.error('Ailment query error:', error);
 
-      // If first attempt failed, try a minimal prompt as last resort
-      try {
-        const minimalPrompt = sanitizeForPrompt(
-          `Describe how the plant "${plantName}" can help with "${currentQuery}". Include preparation, dosage, and warnings. Plain text only, no markdown. 200 words max.`
-        );
-        const fallbackResult = await generateText(minimalPrompt, { temperature: 0.7 });
+      const isTimeout = error?.message?.includes('timed out');
 
-        if (fallbackResult) {
-          const newResponse: AilmentResponse = {
-            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            ailment: currentQuery,
-            response: fallbackResult,
-            timestamp: new Date(),
-          };
-          setResponses(prev => [newResponse, ...prev]);
-          return;
+      // If timed out or first attempt failed, try a minimal prompt as last resort
+      if (!isTimeout) {
+        try {
+          const minimalPrompt = sanitizeForPrompt(
+            `Describe how the plant "${plantName}" can help with "${currentQuery}". Include preparation, dosage, and warnings. Plain text only, no markdown. 200 words max.`
+          );
+          const fallbackResult = await withTimeout(
+            generateText(minimalPrompt, { temperature: 0.7 }),
+            AILMENT_QUERY_TIMEOUT_MS
+          );
+
+          if (fallbackResult && !cancelledRef.current) {
+            const newResponse: AilmentResponse = {
+              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              ailment: currentQuery,
+              response: fallbackResult,
+              timestamp: new Date(),
+            };
+            setResponses(prev => [newResponse, ...prev]);
+            return;
+          }
+        } catch {
+          // Final fallback also failed, show error
         }
-      } catch {
-        // Final fallback also failed, show error
       }
+
+      if (cancelledRef.current) return;
 
       const errorResponse: AilmentResponse = {
         id: `${Date.now()}-error`,
         ailment: currentQuery,
-        response: 'Unable to generate a response at this time. Please check your connection and try again.',
+        response: isTimeout
+          ? 'The request took too long to process. Please try again — a shorter, more specific query may help.'
+          : 'Unable to generate a response at this time. Please check your connection and try again.',
         timestamp: new Date(),
         isError: true,
       };
       setResponses(prev => [errorResponse, ...prev]);
     } finally {
       setIsQuerying(false);
+      setShowCancelHint(false);
+      if (cancelTimerRef.current) {
+        clearTimeout(cancelTimerRef.current);
+        cancelTimerRef.current = null;
+      }
     }
   };
 
@@ -310,7 +380,7 @@ export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
         </ScrollView>
       </View>
 
-      {/* Loading indicator */}
+      {/* Loading indicator with cancel option */}
       {isQuerying && (
         <Animated.View
           entering={FadeIn.duration(300)}
@@ -319,23 +389,60 @@ export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
             borderRadius: 16,
             borderCurve: 'continuous',
             padding: 20,
-            flexDirection: 'row',
-            alignItems: 'center',
             gap: 12,
             boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
           }}
         >
-          <ActivityIndicator size="small" color={Colors.primary} />
-          <Text
-            style={{
-              fontFamily: Fonts.medium,
-              fontSize: 13,
-              color: Colors.textSecondary,
-              flex: 1,
-            }}
-          >
-            Analyzing if {plantName} can help with this condition...
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <ActivityIndicator size="small" color={Colors.primary} />
+            <Text
+              style={{
+                fontFamily: Fonts.medium,
+                fontSize: 13,
+                color: Colors.textSecondary,
+                flex: 1,
+              }}
+            >
+              Analyzing if {plantName} can help with this condition...
+            </Text>
+          </View>
+          {showCancelHint && (
+            <Animated.View
+              entering={FadeInDown.duration(300)}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <Text
+                style={{
+                  fontFamily: Fonts.regular,
+                  fontSize: 12,
+                  color: Colors.textLight,
+                }}
+              >
+                Taking longer than expected...
+              </Text>
+              <Pressable
+                onPress={handleCancelQuery}
+                style={({ pressed }) => ({
+                  paddingHorizontal: 14,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                  backgroundColor: pressed ? 'rgba(211,47,47,0.15)' : 'rgba(211,47,47,0.08)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(211,47,47,0.2)',
+                })}
+              >
+                <Text
+                  style={{
+                    fontFamily: Fonts.semiBold,
+                    fontSize: 12,
+                    color: Colors.error,
+                  }}
+                >
+                  Cancel
+                </Text>
+              </Pressable>
+            </Animated.View>
+          )}
         </Animated.View>
       )}
 

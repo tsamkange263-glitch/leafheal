@@ -223,3 +223,84 @@ function formatReferenceContext(cache: HerbalReferenceCache): string {
 
   return context;
 }
+
+/**
+ * Performs a targeted lookup in the cached herbal reference data for a specific plant.
+ * Instead of sending all 7 books to the AI, this extracts only passages
+ * mentioning the identified plant name (common or scientific).
+ * Returns a condensed, relevant excerpt (max ~4000 chars).
+ */
+export async function getTargetedPlantReference(
+  plantName: string,
+  scientificName?: string | null
+): Promise<string> {
+  try {
+    const cachedData = await getLocalCache();
+    if (!cachedData || !cachedData.references.length) return '';
+
+    const searchTerms = [plantName.toLowerCase()];
+    if (scientificName) {
+      searchTerms.push(scientificName.toLowerCase());
+      // Also add genus name (first word of scientific name)
+      const genus = scientificName.split(' ')[0];
+      if (genus && genus.length > 3) {
+        searchTerms.push(genus.toLowerCase());
+      }
+    }
+    // Add common alternate name patterns
+    const nameWords = plantName.toLowerCase().split(' ');
+    if (nameWords.length > 1) {
+      nameWords.forEach(word => {
+        if (word.length > 3) searchTerms.push(word);
+      });
+    }
+
+    const MAX_TARGETED_CHARS = 4000;
+    let targetedContext = '';
+
+    for (const ref of cachedData.references) {
+      const text = ref.text;
+      const lines = text.split('\n');
+      const relevantLines: string[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const lineLower = lines[i].toLowerCase();
+        const isRelevant = searchTerms.some(term => lineLower.includes(term));
+
+        if (isRelevant) {
+          // Include surrounding context (2 lines before, 4 lines after)
+          const startIdx = Math.max(0, i - 2);
+          const endIdx = Math.min(lines.length - 1, i + 4);
+          for (let j = startIdx; j <= endIdx; j++) {
+            if (!relevantLines.includes(lines[j])) {
+              relevantLines.push(lines[j]);
+            }
+          }
+        }
+      }
+
+      if (relevantLines.length > 0) {
+        const sourceName = ref.fileName
+          .replace(/-/g, ' ')
+          .replace('.pdf', '')
+          .replace(/\b\w/g, c => c.toUpperCase());
+
+        const section = `\n[${sourceName}]: ${relevantLines.join('\n')}\n`;
+
+        if (targetedContext.length + section.length > MAX_TARGETED_CHARS) {
+          const remaining = MAX_TARGETED_CHARS - targetedContext.length;
+          if (remaining > 100) {
+            targetedContext += section.substring(0, remaining) + '\n[...truncated]';
+          }
+          break;
+        }
+        targetedContext += section;
+      }
+    }
+
+    return targetedContext;
+  } catch (error) {
+    console.error('[HerbalReference] Targeted lookup failed:', error);
+    return '';
+  }
+}
