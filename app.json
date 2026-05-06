@@ -16,7 +16,8 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.samkanget.leafheal"
     },
     "web": {
       "bundler": "metro",
@@ -37,6 +38,13 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "owner": "samkanget",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0b8f43c6-667c-4d8c-a0de-5e6979357b0e"
+      }
     }
   }
 }
