@@ -24,7 +24,6 @@ import {
   generatePaymentReference,
   buildPaynowCheckoutUrl,
   sendEcoCashPayment,
-  EcoCashConnectionError,
   pollTransaction,
   isPaymentPaid,
   isPaymentPending,
@@ -35,7 +34,7 @@ import {
 } from '@/lib/paynow';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
-type PaymentStatus = 'idle' | 'processing' | 'polling' | 'awaiting_card' | 'awaiting_ecocash_manual' | 'success' | 'failed';
+type PaymentStatus = 'idle' | 'processing' | 'polling' | 'awaiting_card' | 'success' | 'failed';
 type PaymentMethod = 'ecocash' | 'card';
 
 // Fallback defaults (used while config is loading)
@@ -246,15 +245,11 @@ export default function TopUpScreen() {
 
       if (insertErr) throw insertErr;
 
-      // Get config for direct Paynow request
-      const config = paymentConfig ?? await getPaymentConfig();
-
-      // Send EcoCash payment request directly to Paynow (client-side)
+      // Send EcoCash payment request to Paynow via Edge Function
       const paynowResponse = await sendEcoCashPayment(
         PAYMENT_AMOUNT_USD,
         cleanedPhone,
-        reference,
-        config
+        reference
       );
 
       // Update payment record with poll URL for tracking
@@ -272,14 +267,6 @@ export default function TopUpScreen() {
       setStatus('polling');
       startPolling(paynowResponse.pollurl!, payment.id);
     } catch (e: unknown) {
-      // If it's a connection error, show manual EcoCash fallback
-      if (e instanceof EcoCashConnectionError) {
-        console.warn('[topup] EcoCash connection failed, showing manual fallback:', e.message);
-        setStatus('awaiting_ecocash_manual');
-        setErrorMsg(e.message);
-        return;
-      }
-
       let errorMessage = 'Failed to initiate payment. Please check your number and try again.';
       if (e instanceof Error) {
         errorMessage = e.message;
@@ -292,54 +279,6 @@ export default function TopUpScreen() {
       console.error('EcoCash payment initiation error:', errorMessage, e);
       setStatus('failed');
       setErrorMsg(errorMessage);
-    }
-  };
-
-  // Handle manual EcoCash payment - user confirms they've sent money manually
-  const handleManualEcoCashConfirm = async () => {
-    if (!user?.id) return;
-
-    setIsCheckingManually(true);
-
-    try {
-      // Check if any pending payment for this user was updated by webhook
-      const { data } = await supabase
-        .from('payments')
-        .select('id, status')
-        .eq('user_id', user.id)
-        .eq('payment_method', 'ecocash')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (data?.status === 'success') {
-        // Payment was confirmed via webhook
-        const { data: userData } = await supabase
-          .from('users')
-          .select('scan_credits')
-          .eq('id', user.id)
-          .single();
-        if (userData) {
-          updateCredits(userData.scan_credits);
-        }
-        setStatus('success');
-      } else {
-        // Payment still pending - let user know admin will verify
-        Alert.alert(
-          'Payment Recorded',
-          'Your payment has been recorded as pending. Credits will be added once the payment is verified by our team. This usually takes a few minutes.',
-          [{ text: 'OK', onPress: () => router.back() }]
-        );
-      }
-    } catch (err) {
-      console.error('[topup] Manual EcoCash check error:', err);
-      Alert.alert(
-        'Payment Recorded',
-        'Your payment has been recorded. Credits will be added once verified. Please check back shortly.',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
-    } finally {
-      setIsCheckingManually(false);
     }
   };
 
@@ -1460,239 +1399,6 @@ export default function TopUpScreen() {
               paddingVertical: 10,
               paddingHorizontal: 20,
               marginTop: 4,
-            }}
-          >
-            <Text
-              style={{
-                fontFamily: Fonts.semiBold,
-                fontSize: 14,
-                color: Colors.error,
-              }}
-            >
-              Cancel & Try Again
-            </Text>
-          </Pressable>
-        </Animated.View>
-      )}
-
-      {/* Manual EcoCash fallback - shown when direct USSD push fails */}
-      {status === 'awaiting_ecocash_manual' && (
-        <Animated.View
-          entering={FadeIn.duration(500)}
-          style={{
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingVertical: 32,
-            gap: 20,
-          }}
-        >
-          <View
-            style={{
-              width: 80,
-              height: 80,
-              borderRadius: 40,
-              backgroundColor: 'rgba(233,30,99,0.1)',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Ionicons name="phone-portrait-outline" size={40} color={Colors.ecocash} />
-          </View>
-
-          <Text
-            style={{
-              fontFamily: Fonts.bold,
-              fontSize: 20,
-              color: Colors.textPrimary,
-              textAlign: 'center',
-            }}
-          >
-            Pay Manually via EcoCash
-          </Text>
-
-          <Text
-            style={{
-              fontFamily: Fonts.regular,
-              fontSize: 14,
-              color: Colors.textSecondary,
-              textAlign: 'center',
-              lineHeight: 22,
-              maxWidth: 320,
-            }}
-          >
-            The automatic USSD push is temporarily unavailable. Please send the payment manually using the details below:
-          </Text>
-
-          {/* Payment instructions card */}
-          <View
-            style={{
-              width: '100%',
-              backgroundColor: 'rgba(233,30,99,0.05)',
-              borderRadius: 16,
-              borderCurve: 'continuous',
-              padding: 20,
-              gap: 16,
-              borderWidth: 1,
-              borderColor: 'rgba(233,30,99,0.15)',
-            }}
-          >
-            <Text
-              style={{
-                fontFamily: Fonts.bold,
-                fontSize: 15,
-                color: Colors.textPrimary,
-                textAlign: 'center',
-              }}
-            >
-              EcoCash Payment Instructions
-            </Text>
-
-            {[
-              { step: '1', text: 'Dial *151# on your phone' },
-              { step: '2', text: 'Select "Send Money" or "Merchant Payment"' },
-              { step: '3', text: `Send $${PAYMENT_AMOUNT_USD.toFixed(2)} to the merchant` },
-              { step: '4', text: 'Use your transaction reference for confirmation' },
-            ].map((item, i) => (
-              <View
-                key={i}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 12,
-                }}
-              >
-                <View
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 13,
-                    backgroundColor: Colors.ecocash,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontFamily: Fonts.bold,
-                      fontSize: 12,
-                      color: Colors.white,
-                    }}
-                  >
-                    {item.step}
-                  </Text>
-                </View>
-                <Text
-                  style={{
-                    fontFamily: Fonts.regular,
-                    fontSize: 14,
-                    color: Colors.textPrimary,
-                    flex: 1,
-                  }}
-                >
-                  {item.text}
-                </Text>
-              </View>
-            ))}
-
-            <View
-              style={{
-                backgroundColor: 'rgba(233,30,99,0.08)',
-                borderRadius: 10,
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-                gap: 4,
-                marginTop: 4,
-              }}
-            >
-              <Text
-                style={{
-                  fontFamily: Fonts.semiBold,
-                  fontSize: 13,
-                  color: Colors.ecocash,
-                }}
-              >
-                Amount: ${PAYMENT_AMOUNT_USD.toFixed(2)} USD
-              </Text>
-              <Text
-                selectable
-                style={{
-                  fontFamily: Fonts.semiBold,
-                  fontSize: 13,
-                  color: Colors.ecocash,
-                }}
-              >
-                Credits: {SCANS_PER_TOPUP} plant scans
-              </Text>
-            </View>
-          </View>
-
-          {/* Info about automatic crediting */}
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-              backgroundColor: 'rgba(46,125,50,0.06)',
-              paddingHorizontal: 14,
-              paddingVertical: 10,
-              borderRadius: 10,
-              width: '100%',
-            }}
-          >
-            <Ionicons name="information-circle-outline" size={18} color={Colors.primary} />
-            <Text
-              style={{
-                fontFamily: Fonts.regular,
-                fontSize: 12,
-                color: Colors.textSecondary,
-                flex: 1,
-                lineHeight: 18,
-              }}
-            >
-              Once your payment is confirmed, your credits will be added automatically. This may take a few minutes.
-            </Text>
-          </View>
-
-          {/* I've paid button */}
-          <Pressable
-            onPress={handleManualEcoCashConfirm}
-            disabled={isCheckingManually}
-            style={({ pressed }) => ({
-              backgroundColor: Colors.ecocash,
-              paddingVertical: 16,
-              paddingHorizontal: 32,
-              borderRadius: 14,
-              borderCurve: 'continuous',
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-              opacity: isCheckingManually ? 0.7 : pressed ? 0.9 : 1,
-              width: '100%',
-              justifyContent: 'center',
-            })}
-          >
-            {isCheckingManually ? (
-              <ActivityIndicator size="small" color={Colors.white} />
-            ) : (
-              <Ionicons name="checkmark-circle-outline" size={20} color={Colors.white} />
-            )}
-            <Text
-              style={{
-                fontFamily: Fonts.bold,
-                fontSize: 16,
-                color: Colors.white,
-              }}
-            >
-              {isCheckingManually ? 'Checking...' : "I've Sent the Payment"}
-            </Text>
-          </Pressable>
-
-          {/* Cancel */}
-          <Pressable
-            onPress={handleRetry}
-            style={{
-              paddingVertical: 10,
-              paddingHorizontal: 20,
             }}
           >
             <Text

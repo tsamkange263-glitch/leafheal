@@ -1,16 +1,14 @@
 import { supabase } from '@/lib/supabase';
 import type { PaymentConfig } from '@/lib/app-config';
-import { md5 } from 'js-md5';
 
-// Supabase Edge Function URL for proxying Paynow requests
+// Supabase Edge Function URL for proxying Paynow EcoCash requests
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/paynow-initiate`;
 
-// Paynow API URLs
+// Paynow direct API URL (used for client-side card payment initiation)
 const PAYNOW_INITIATE_URL = 'https://www.paynow.co.zw/interface/initiatetransaction';
-const PAYNOW_REMOTE_URL = 'https://www.paynow.co.zw/interface/remotetransaction';
 
-// Paynow Advanced Payment Button base URL (static)
+// Paynow Advanced Payment Button base URL (static, used for card payments)
 const PAYNOW_BUTTON_BASE_URL = 'https://www.paynow.co.zw/Payment/BillPaymentLink';
 
 export interface PaynowResponse {
@@ -205,141 +203,38 @@ async function callPaynowEdgeFunction(payload: Record<string, unknown>): Promise
 }
 
 /**
- * Generate Paynow hash for request verification.
- * Paynow uses MD5(concatenation of all field values + integration key) in UPPERCASE.
- */
-function generatePaynowHash(values: string[], integrationKey: string): string {
-  const concatenated = values.join('') + integrationKey;
-  return md5(concatenated).toUpperCase();
-}
-
-/**
- * Send an EcoCash payment request directly to Paynow's remote transaction API.
- * Makes the request from the client side to avoid "Connection reset by peer" errors
- * that occur when Supabase Edge Functions try to connect to Paynow's servers.
- *
+ * Send an EcoCash payment request via Paynow remote transaction API.
+ * Proxied through Supabase Edge Function (paynow-initiate) which handles
+ * the server-to-server call to Paynow's /interface/remotetransaction endpoint.
  * Returns the parsed response containing pollurl on success.
- * Throws an EcoCashConnectionError if direct connection fails (caller should show manual fallback).
  */
-export class EcoCashConnectionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'EcoCashConnectionError';
-  }
-}
-
 export async function sendEcoCashPayment(
   amount: number,
   phone: string,
-  reference: string,
-  config: PaymentConfig
+  reference: string
 ): Promise<PaynowResponse> {
   const normalizedPhone = normalizePhone(phone);
 
-  // Validate that we have the required config for direct EcoCash
-  if (!config.paynow_integration_key) {
-    throw new EcoCashConnectionError(
-      'Payment system configuration incomplete. Please try the manual payment option.'
-    );
-  }
-
-  // Build the form fields for the remote transaction
-  const fields = {
-    id: config.paynow_integration_id,
-    reference: reference,
-    amount: String(amount.toFixed(2)),
-    additionalinfo: 'HerbScan Credit Top-Up',
-    returnurl: config.paynow_return_url || 'https://www.paynow.co.zw',
-    resulturl: config.paynow_result_url,
-    authemail: config.paynow_auth_email,
-    phone: normalizedPhone,
-    method: 'ecocash',
-    status: 'Message',
-  };
-
-  // Generate hash: concatenate all values in order + integration key, then MD5
-  const hashValues = [
-    fields.id,
-    fields.reference,
-    fields.amount,
-    fields.additionalinfo,
-    fields.returnurl,
-    fields.resulturl,
-    fields.authemail,
-    fields.phone,
-    fields.method,
-    fields.status,
-  ];
-  const hash = generatePaynowHash(hashValues, config.paynow_integration_key);
-
-  // Build form data
-  const formData = new URLSearchParams();
-  formData.append('id', fields.id);
-  formData.append('reference', fields.reference);
-  formData.append('amount', fields.amount);
-  formData.append('additionalinfo', fields.additionalinfo);
-  formData.append('returnurl', fields.returnurl);
-  formData.append('resulturl', fields.resulturl);
-  formData.append('authemail', fields.authemail);
-  formData.append('phone', fields.phone);
-  formData.append('method', fields.method);
-  formData.append('status', fields.status);
-  formData.append('hash', hash);
-
-  console.log('[paynow] Sending EcoCash payment directly to Paynow...', {
+  const responseData = await callPaynowEdgeFunction({
+    type: 'ecocash',
+    amount,
     reference,
     phone: normalizedPhone,
-    amount: fields.amount,
+    method: 'ecocash',
   });
 
-  let response: Response;
-  try {
-    response = await fetch(PAYNOW_REMOTE_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData.toString(),
-    });
-  } catch (networkErr: unknown) {
-    const msg = networkErr instanceof Error ? networkErr.message : 'Unknown network error';
-    console.error('[paynow] Network error connecting to Paynow EcoCash:', msg);
-    throw new EcoCashConnectionError(
-      'Unable to connect to Paynow payment gateway. The automatic USSD push is unavailable. Please use the manual payment option below.'
-    );
-  }
+  const result: PaynowResponse = {
+    status: (responseData.status as string) || 'ok',
+    browserurl: (responseData.browserurl as string) || undefined,
+    pollurl: (responseData.pollurl as string) || undefined,
+    hash: (responseData.hash as string) || undefined,
+  };
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    console.error(`[paynow] Paynow EcoCash HTTP ${response.status}: ${errorText}`);
-    throw new EcoCashConnectionError(
-      `Payment gateway returned an error (HTTP ${response.status}). Please use the manual payment option.`
-    );
-  }
-
-  const responseText = await response.text();
-  console.log('[paynow] Paynow EcoCash response:', responseText);
-
-  const parsed = parsePaynowResponse(responseText);
-
-  if (parsed.status?.toLowerCase() === 'error') {
-    const errorMsg = parsed.error || 'Payment initiation failed.';
-    // Check if it's a connection/network error from Paynow side
-    if (errorMsg.toLowerCase().includes('connection') || errorMsg.toLowerCase().includes('reset')) {
-      throw new EcoCashConnectionError(errorMsg);
-    }
-    throw new Error(errorMsg);
-  }
-
-  if (parsed.status?.toLowerCase() !== 'ok') {
-    throw new Error(parsed.error || `Unexpected payment status: ${parsed.status}`);
-  }
-
-  if (!parsed.pollurl) {
+  if (!result.pollurl) {
     throw new Error('No poll URL returned from payment gateway.');
   }
 
-  return parsed;
+  return result;
 }
 
 /**
