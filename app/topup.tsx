@@ -427,12 +427,13 @@ export default function TopUpScreen() {
 
       // Build dynamic Paynow checkout URL with user reference in f1 field
       // Uses integration ID and amount from app_config table
+      const userEmail = user.email || profile?.email || undefined;
       const config = paymentConfig ?? {
         paynow_integration_id: '24565',
         paynow_amount: String(CARD_PAYMENT_AMOUNT_USD),
         scans_per_payment: SCANS_PER_TOPUP,
       };
-      const checkoutUrl = buildPaynowCheckoutUrl(paymentRef, config);
+      const checkoutUrl = buildPaynowCheckoutUrl(paymentRef, config, userEmail);
       cardCheckoutUrlRef.current = checkoutUrl;
 
       console.log('[topup] Opening dynamic Paynow checkout URL with ref:', paymentRef);
