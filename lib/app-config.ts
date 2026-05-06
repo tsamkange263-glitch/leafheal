@@ -2,16 +2,37 @@ import { supabase } from '@/lib/supabase';
 
 export interface PaymentConfig {
   paynow_integration_id: string;
+  paynow_integration_key: string;
   paynow_amount: string;
+  paynow_ecocash_amount: string;
+  paynow_result_url: string;
+  paynow_return_url: string;
+  paynow_auth_email: string;
   scans_per_payment: number;
 }
 
 // Default fallback values (used if database fetch fails)
 const DEFAULT_CONFIG: PaymentConfig = {
   paynow_integration_id: '24565',
+  paynow_integration_key: '',
   paynow_amount: '1.25',
+  paynow_ecocash_amount: '1.00',
+  paynow_result_url: '',
+  paynow_return_url: 'https://www.paynow.co.zw',
+  paynow_auth_email: '',
   scans_per_payment: 20,
 };
+
+const CONFIG_KEYS = [
+  'paynow_integration_id',
+  'paynow_integration_key',
+  'paynow_amount',
+  'paynow_ecocash_amount',
+  'paynow_result_url',
+  'paynow_return_url',
+  'paynow_auth_email',
+  'scans_per_payment',
+];
 
 // Simple in-memory cache with TTL
 let cachedConfig: PaymentConfig | null = null;
@@ -35,7 +56,7 @@ export async function getPaymentConfig(): Promise<PaymentConfig> {
     const { data, error } = await supabase
       .from('app_config')
       .select('key, value')
-      .in('key', ['paynow_integration_id', 'paynow_amount', 'scans_per_payment']);
+      .in('key', CONFIG_KEYS);
 
     if (error) {
       console.error('[app-config] Failed to fetch config:', error.message);
@@ -54,7 +75,12 @@ export async function getPaymentConfig(): Promise<PaymentConfig> {
 
     const config: PaymentConfig = {
       paynow_integration_id: configMap.paynow_integration_id ?? DEFAULT_CONFIG.paynow_integration_id,
+      paynow_integration_key: configMap.paynow_integration_key ?? DEFAULT_CONFIG.paynow_integration_key,
       paynow_amount: configMap.paynow_amount ?? DEFAULT_CONFIG.paynow_amount,
+      paynow_ecocash_amount: configMap.paynow_ecocash_amount ?? DEFAULT_CONFIG.paynow_ecocash_amount,
+      paynow_result_url: configMap.paynow_result_url ?? DEFAULT_CONFIG.paynow_result_url,
+      paynow_return_url: configMap.paynow_return_url ?? DEFAULT_CONFIG.paynow_return_url,
+      paynow_auth_email: configMap.paynow_auth_email ?? DEFAULT_CONFIG.paynow_auth_email,
       scans_per_payment: parseInt(configMap.scans_per_payment ?? String(DEFAULT_CONFIG.scans_per_payment), 10),
     };
 
