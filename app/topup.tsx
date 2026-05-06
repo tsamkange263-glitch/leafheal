@@ -7,6 +7,8 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  Linking,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,7 +29,6 @@ import {
   isPaymentFailed,
 } from '@/lib/paynow';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
-import * as WebBrowser from 'expo-web-browser';
 
 type PaymentStatus = 'idle' | 'processing' | 'polling' | 'success' | 'failed';
 type PaymentMethod = 'ecocash' | 'card';
@@ -218,13 +219,18 @@ export default function TopUpScreen() {
       setStatus('polling');
       startPolling(paynowResponse.pollurl!, payment.id);
     } catch (e: unknown) {
-      console.error('Payment initiation error:', e);
+      let errorMessage = 'Failed to initiate payment. Please check your number and try again.';
+      if (e instanceof Error) {
+        errorMessage = e.message;
+      } else if (typeof e === 'object' && e !== null) {
+        const errObj = e as Record<string, unknown>;
+        errorMessage = (errObj.message as string) || (errObj.error as string) || JSON.stringify(e);
+      } else if (typeof e === 'string') {
+        errorMessage = e;
+      }
+      console.error('EcoCash payment initiation error:', errorMessage, e);
       setStatus('failed');
-      setErrorMsg(
-        e instanceof Error
-          ? e.message
-          : 'Failed to initiate payment. Please check your number and try again.'
-      );
+      setErrorMsg(errorMessage);
     }
   };
 
@@ -252,9 +258,12 @@ export default function TopUpScreen() {
         .select()
         .single();
 
-      if (insertErr) throw insertErr;
+      if (insertErr) {
+        console.error('Card payment DB insert error:', insertErr);
+        throw new Error('Failed to create payment record. Please try again.');
+      }
 
-      // Initiate standard web checkout - uses merchant email internally
+      // Initiate standard web checkout via edge function (avoids CORS)
       const paynowResponse = await initiateCardPayment(
         PAYMENT_AMOUNT_USD,
         reference
@@ -271,23 +280,40 @@ export default function TopUpScreen() {
 
       // Open the Paynow checkout page in browser for user to enter card details
       if (paynowResponse.browserurl) {
-        await WebBrowser.openBrowserAsync(paynowResponse.browserurl, {
-          dismissButtonStyle: 'done',
-          presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-        });
+        const url = paynowResponse.browserurl;
+        console.log('[topup] Opening Paynow checkout URL:', url);
+
+        if (Platform.OS === 'web') {
+          // On web, open in a new tab
+          window.open(url, '_blank');
+        } else {
+          // On native, use Linking to open in device browser
+          const canOpen = await Linking.canOpenURL(url);
+          if (canOpen) {
+            await Linking.openURL(url);
+          } else {
+            throw new Error('Unable to open checkout page. Please try again.');
+          }
+        }
       }
 
-      // After browser closes, start polling for payment confirmation
+      // After browser opens, start polling for payment confirmation
       setStatus('polling');
       startPolling(paynowResponse.pollurl!, payment.id);
     } catch (e: unknown) {
-      console.error('Card payment initiation error:', e);
+      // Extract meaningful error message from any error type
+      let errorMessage = 'Failed to initiate card payment. Please try again.';
+      if (e instanceof Error) {
+        errorMessage = e.message;
+      } else if (typeof e === 'object' && e !== null) {
+        const errObj = e as Record<string, unknown>;
+        errorMessage = (errObj.message as string) || (errObj.error as string) || JSON.stringify(e);
+      } else if (typeof e === 'string') {
+        errorMessage = e;
+      }
+      console.error('Card payment initiation error:', errorMessage, e);
       setStatus('failed');
-      setErrorMsg(
-        e instanceof Error
-          ? e.message
-          : 'Failed to initiate card payment. Please try again.'
-      );
+      setErrorMsg(errorMessage);
     }
   };
 

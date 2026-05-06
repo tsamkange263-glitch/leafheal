@@ -1,14 +1,8 @@
-import * as Crypto from 'expo-crypto';
+import { supabase } from '@/lib/supabase';
 
-// Paynow configuration constants
-const PAYNOW_INTEGRATION_ID = process.env.EXPO_PUBLIC_PAYNOW_INTEGRATION_ID ?? '14960';
-const PAYNOW_INTEGRATION_KEY =
-  process.env.EXPO_PUBLIC_PAYNOW_INTEGRATION_KEY ?? 'e2cfa088-d2a6-4f73-9c7a-b9f840cd26ce';
-const PAYNOW_MERCHANT_EMAIL = 'samkangineer@gmail.com';
-const PAYNOW_REMOTE_URL = 'https://www.paynow.co.zw/interface/remotetransaction';
-const PAYNOW_INITIATE_URL = 'https://www.paynow.co.zw/interface/initiatetransaction';
-const PAYNOW_RETURN_URL = 'https://yourapp.com/payment/return';
-const PAYNOW_RESULT_URL = 'https://yourapp.com/payment/result';
+// Supabase Edge Function URL for proxying Paynow requests (avoids CORS on web)
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/paynow-initiate`;
 
 export interface PaynowResponse {
   status: string;
@@ -29,26 +23,7 @@ export interface PollResult {
 }
 
 /**
- * Generate SHA512 hash of a string using expo-crypto
- */
-async function sha512(input: string): Promise<string> {
-  const hash = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA512,
-    input
-  );
-  return hash.toUpperCase();
-}
-
-/**
- * Generate a Paynow hash by joining field values and the integration key, then hashing
- */
-async function generateHash(values: string[]): Promise<string> {
-  const joinedString = values.join('') + PAYNOW_INTEGRATION_KEY;
-  return sha512(joinedString);
-}
-
-/**
- * Parse URL-encoded response from Paynow into an object
+ * Parse URL-encoded response from Paynow into an object (used for poll responses)
  */
 function parsePaynowResponse(responseText: string): PaynowResponse {
   const params: Record<string, string> = {};
@@ -96,7 +71,69 @@ export function generateTransactionRef(): string {
 }
 
 /**
+ * Get the current user's access token for authenticated edge function calls
+ */
+async function getAccessToken(): Promise<string> {
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error || !session?.access_token) {
+    throw new Error('Authentication required. Please sign in and try again.');
+  }
+  return session.access_token;
+}
+
+/**
+ * Call the Paynow edge function proxy to avoid CORS issues on web.
+ * The edge function handles hash generation and Paynow communication server-side.
+ */
+async function callPaynowEdgeFunction(payload: Record<string, unknown>): Promise<PaynowResponse> {
+  const accessToken = await getAccessToken();
+
+  let response: Response;
+  try {
+    response = await fetch(EDGE_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (networkErr: unknown) {
+    const msg = networkErr instanceof Error ? networkErr.message : 'Unknown network error';
+    console.error('[paynow] Network error calling edge function:', msg);
+    throw new Error(
+      'Network error connecting to payment gateway. Please check your internet connection and try again.'
+    );
+  }
+
+  let responseData: Record<string, unknown>;
+  try {
+    responseData = await response.json();
+  } catch {
+    const text = await response.text().catch(() => '');
+    console.error('[paynow] Non-JSON response from edge function:', text);
+    throw new Error(`Payment gateway returned an invalid response (HTTP ${response.status}). Please try again.`);
+  }
+
+  if (!response.ok) {
+    const errorMsg = (responseData.error as string) || `Payment request failed (HTTP ${response.status})`;
+    const details = (responseData.details as string) || '';
+    console.error('[paynow] Edge function error:', { status: response.status, error: errorMsg, details });
+    throw new Error(errorMsg + (details ? `: ${details}` : ''));
+  }
+
+  // Success response from edge function
+  return {
+    status: (responseData.status as string) || 'ok',
+    browserurl: (responseData.browserurl as string) || undefined,
+    pollurl: (responseData.pollurl as string) || undefined,
+    hash: (responseData.hash as string) || undefined,
+  };
+}
+
+/**
  * Send an EcoCash payment request via Paynow remote transaction API.
+ * Proxied through Supabase Edge Function to avoid CORS issues.
  * Returns the parsed response containing pollurl on success.
  */
 export async function sendEcoCashPayment(
@@ -105,66 +142,20 @@ export async function sendEcoCashPayment(
   reference: string
 ): Promise<PaynowResponse> {
   const normalizedPhone = normalizePhone(phone);
-  const amountStr = amount.toFixed(2);
 
-  // Build the values array for hash generation (order matters: must match form fields order)
-  const hashValues = [
-    PAYNOW_INTEGRATION_ID,
+  const result = await callPaynowEdgeFunction({
+    type: 'ecocash',
+    amount,
     reference,
-    amountStr,
-    `HerbScan Top Up - ${reference}`,
-    PAYNOW_RETURN_URL,
-    PAYNOW_RESULT_URL,
-    PAYNOW_MERCHANT_EMAIL,
-    normalizedPhone,
-    'ecocash',
-    'Message',
-  ];
-
-  const hash = await generateHash(hashValues);
-
-  // Build form data
-  const formData = new URLSearchParams();
-  formData.append('id', PAYNOW_INTEGRATION_ID);
-  formData.append('reference', reference);
-  formData.append('amount', amountStr);
-  formData.append('additionalinfo', `HerbScan Top Up - ${reference}`);
-  formData.append('returnurl', PAYNOW_RETURN_URL);
-  formData.append('resulturl', PAYNOW_RESULT_URL);
-  formData.append('authemail', PAYNOW_MERCHANT_EMAIL);
-  formData.append('phone', normalizedPhone);
-  formData.append('method', 'ecocash');
-  formData.append('status', 'Message');
-  formData.append('hash', hash);
-
-  const response = await fetch(PAYNOW_REMOTE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: formData.toString(),
+    phone: normalizedPhone,
+    method: 'ecocash',
   });
 
-  if (!response.ok) {
-    throw new Error(`Paynow request failed with status ${response.status}`);
-  }
-
-  const responseText = await response.text();
-  const parsed = parsePaynowResponse(responseText);
-
-  if (parsed.status?.toLowerCase() === 'error') {
-    throw new Error(parsed.error || 'Payment initiation failed. Please try again.');
-  }
-
-  if (parsed.status?.toLowerCase() !== 'ok') {
-    throw new Error(parsed.error || `Unexpected response: ${parsed.status}`);
-  }
-
-  if (!parsed.pollurl) {
+  if (!result.pollurl) {
     throw new Error('No poll URL returned from payment gateway.');
   }
 
-  return parsed;
+  return result;
 }
 
 /**
@@ -221,86 +212,27 @@ export function isPaymentFailed(result: PollResult): boolean {
 
 /**
  * Initiate a standard Paynow web checkout for Visa/Mastercard payments.
+ * Proxied through Supabase Edge Function to avoid CORS issues on web.
  * Returns a browserurl where the user completes card payment, and a pollurl for status checks.
- *
- * NOTE: The `authemail` must be the merchant's registered email (PAYNOW_MERCHANT_EMAIL),
- * NOT the customer's email. Paynow validates this against the integration account.
  */
 export async function initiateCardPayment(
   amount: number,
   reference: string,
   _customerEmail?: string
 ): Promise<PaynowResponse> {
-  const amountStr = amount.toFixed(2);
-  const additionalInfo = `HerbScan Top Up - ${reference}`;
-
-  // Hash values must match the exact order of form fields sent to Paynow:
-  // id, reference, amount, additionalinfo, returnurl, resulturl, authemail, status
-  const hashValues = [
-    PAYNOW_INTEGRATION_ID,
+  const result = await callPaynowEdgeFunction({
+    type: 'card',
+    amount,
     reference,
-    amountStr,
-    additionalInfo,
-    PAYNOW_RETURN_URL,
-    PAYNOW_RESULT_URL,
-    PAYNOW_MERCHANT_EMAIL,
-    'Message',
-  ];
+  });
 
-  const hash = await generateHash(hashValues);
-
-  // Build form data for standard initiate transaction
-  // authemail MUST be the merchant's registered email for Paynow to accept the request
-  const formData = new URLSearchParams();
-  formData.append('id', PAYNOW_INTEGRATION_ID);
-  formData.append('reference', reference);
-  formData.append('amount', amountStr);
-  formData.append('additionalinfo', additionalInfo);
-  formData.append('returnurl', PAYNOW_RETURN_URL);
-  formData.append('resulturl', PAYNOW_RESULT_URL);
-  formData.append('authemail', PAYNOW_MERCHANT_EMAIL);
-  formData.append('status', 'Message');
-  formData.append('hash', hash);
-
-  let response: Response;
-  try {
-    response = await fetch(PAYNOW_INITIATE_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData.toString(),
-    });
-  } catch (networkErr) {
-    throw new Error(
-      'Network error connecting to payment gateway. Please check your internet connection and try again.'
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(`Paynow request failed with HTTP status ${response.status}. Please try again.`);
-  }
-
-  const responseText = await response.text();
-  const parsed = parsePaynowResponse(responseText);
-
-  if (parsed.status?.toLowerCase() === 'error') {
-    const errorDetail = parsed.error || 'Unknown error';
-    throw new Error(`Payment gateway error: ${errorDetail}`);
-  }
-
-  if (parsed.status?.toLowerCase() !== 'ok') {
-    const errorDetail = parsed.error || `Unexpected status: ${parsed.status}`;
-    throw new Error(`Payment initiation failed: ${errorDetail}`);
-  }
-
-  if (!parsed.browserurl) {
+  if (!result.browserurl) {
     throw new Error('No checkout URL returned from payment gateway. Please try again.');
   }
 
-  if (!parsed.pollurl) {
+  if (!result.pollurl) {
     throw new Error('No poll URL returned from payment gateway. Please try again.');
   }
 
-  return parsed;
+  return result;
 }
