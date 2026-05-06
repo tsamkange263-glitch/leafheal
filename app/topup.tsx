@@ -22,7 +22,6 @@ import {
   validateZimPhone,
   generateTransactionRef,
   sendEcoCashPayment,
-  initiateCardPayment,
   pollTransaction,
   isPaymentPaid,
   isPaymentPending,
@@ -35,11 +34,16 @@ type PaymentStatus = 'idle' | 'processing' | 'polling' | 'awaiting_card' | 'succ
 type PaymentMethod = 'ecocash' | 'card';
 
 const PAYMENT_AMOUNT_USD = 1.0;
+const CARD_PAYMENT_AMOUNT_USD = 1.25; // Includes Paynow fees for card payments
 const SCANS_PER_TOPUP = 20;
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 12; // 12 * 5s = 60 seconds max
 const CARD_DB_POLL_INTERVAL_MS = 4000;
 const CARD_MAX_DB_POLL_ATTEMPTS = 45; // 45 * 4s = 3 minutes max
+
+// Paynow Advanced Payment Button - hosted checkout link for Visa/Mastercard
+const PAYNOW_CARD_CHECKOUT_URL =
+  'https://www.paynow.co.zw/Payment/BillPaymentLink/?q=aWQ9MjQ1NjUmYW1vdW50PTEuMjUmYW1vdW50X3F1YW50aXR5PTAuMDAmbD0w';
 
 export default function TopUpScreen() {
   const router = useRouter();
@@ -336,8 +340,8 @@ export default function TopUpScreen() {
       } else {
         // Still pending - show a message
         Alert.alert(
-          'Payment Not Yet Confirmed',
-          'We haven\'t received confirmation from Paynow yet. This usually takes 30-60 seconds after completing payment. Please wait a moment and try again.',
+          'Payment Processing',
+          'Payment processing, credits will be added shortly. If you\'ve completed payment on Paynow, please wait 30-60 seconds for the confirmation to be processed.',
           [{ text: 'OK' }]
         );
       }
@@ -368,7 +372,7 @@ export default function TopUpScreen() {
         .insert({
           user_id: user.id,
           ecocash_number: null,
-          amount_usd: PAYMENT_AMOUNT_USD,
+          amount_usd: CARD_PAYMENT_AMOUNT_USD,
           scans_added: SCANS_PER_TOPUP,
           status: 'pending',
           paynow_reference: reference,
@@ -384,46 +388,29 @@ export default function TopUpScreen() {
 
       cardPaymentIdRef.current = payment.id;
 
-      // Initiate card payment - hash generated server-side, request sent client-side
-      const paynowResponse = await initiateCardPayment(
-        PAYMENT_AMOUNT_USD,
-        reference
-      );
+      // Open the Paynow hosted checkout page directly in the browser
+      console.log('[topup] Opening Paynow hosted checkout URL');
 
-      // Update payment record with sent status
-      await supabase
-        .from('payments')
-        .update({
-          status: 'sent',
-          paynow_reference: reference,
-        })
-        .eq('id', payment.id);
-
-      // Open the Paynow checkout page in browser for user to enter card details
-      if (paynowResponse.browserurl) {
-        const url = paynowResponse.browserurl;
-        console.log('[topup] Opening Paynow checkout URL:', url);
-
-        if (Platform.OS === 'web') {
-          window.open(url, '_blank');
+      if (Platform.OS === 'web') {
+        window.open(PAYNOW_CARD_CHECKOUT_URL, '_blank');
+      } else {
+        const canOpen = await Linking.canOpenURL(PAYNOW_CARD_CHECKOUT_URL);
+        if (canOpen) {
+          await Linking.openURL(PAYNOW_CARD_CHECKOUT_URL);
         } else {
-          const canOpen = await Linking.canOpenURL(url);
-          if (canOpen) {
-            await Linking.openURL(url);
-          } else {
-            throw new Error('Unable to open checkout page. Please try again.');
-          }
+          throw new Error('Unable to open checkout page. Please try again.');
         }
       }
+
+      // Update payment record to 'sent' status
+      await supabase
+        .from('payments')
+        .update({ status: 'sent' })
+        .eq('id', payment.id);
 
       // Show "awaiting card payment" state and start background DB polling
       setStatus('awaiting_card');
       startCardDbPolling(payment.id);
-
-      // Also try direct Paynow polling if pollurl is available
-      if (paynowResponse.pollurl) {
-        startPolling(paynowResponse.pollurl, payment.id);
-      }
     } catch (e: unknown) {
       let errorMessage = 'Failed to initiate card payment. Please try again.';
       if (e instanceof Error) {
@@ -725,7 +712,7 @@ export default function TopUpScreen() {
                       marginTop: 1,
                     }}
                   >
-                    Pay securely with your bank card
+                    $1.25 via Paynow secure checkout
                   </Text>
                 </View>
                 <View
@@ -843,23 +830,46 @@ export default function TopUpScreen() {
                 borderCurve: 'continuous',
                 paddingHorizontal: 16,
                 paddingVertical: 14,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
+                gap: 10,
               }}
             >
-              <Ionicons name="lock-closed" size={18} color="#1A237E" />
-              <Text
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name="lock-closed" size={18} color="#1A237E" />
+                <Text
+                  style={{
+                    fontFamily: Fonts.regular,
+                    fontSize: 13,
+                    color: Colors.textSecondary,
+                    flex: 1,
+                    lineHeight: 19,
+                  }}
+                >
+                  {"You'll be redirected to Paynow's secure checkout page to enter your card details."}
+                </Text>
+              </View>
+              <View
                 style={{
-                  fontFamily: Fonts.regular,
-                  fontSize: 13,
-                  color: Colors.textSecondary,
-                  flex: 1,
-                  lineHeight: 19,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  backgroundColor: 'rgba(26,35,126,0.06)',
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                  alignSelf: 'flex-start',
                 }}
               >
-                {"You'll be redirected to Paynow's secure checkout page to enter your card details."}
-              </Text>
+                <Ionicons name="information-circle-outline" size={14} color="#1A237E" />
+                <Text
+                  style={{
+                    fontFamily: Fonts.semiBold,
+                    fontSize: 12,
+                    color: '#1A237E',
+                  }}
+                >
+                  Card total: $1.25 (includes payment processing fees)
+                </Text>
+              </View>
             </Animated.View>
           )}
 
@@ -960,10 +970,10 @@ export default function TopUpScreen() {
                   </View>
                 ))
               : [
-                  { step: '1', text: 'Tap "Pay with Card"' },
-                  { step: '2', text: 'Enter your Visa/Mastercard details on Paynow' },
-                  { step: '3', text: 'Confirm the $1.00 payment' },
-                  { step: '4', text: '20 scan credits added instantly!' },
+                  { step: '1', text: 'Tap "Pay with Card" to open Paynow checkout' },
+                  { step: '2', text: 'Enter your Visa/Mastercard details securely' },
+                  { step: '3', text: 'Confirm the $1.25 payment (includes fees)' },
+                  { step: '4', text: '20 scan credits added automatically!' },
                 ].map((item, i) => (
                   <View
                     key={i}
@@ -1190,7 +1200,7 @@ export default function TopUpScreen() {
               textAlign: 'center',
             }}
           >
-            Waiting for Payment...
+            Complete Payment in Browser
           </Text>
           <Text
             style={{
@@ -1202,7 +1212,7 @@ export default function TopUpScreen() {
               maxWidth: 300,
             }}
           >
-            Complete your card payment on the Paynow checkout page that opened in your browser.
+            Complete your $1.25 card payment on the Paynow checkout page that opened in your browser.
           </Text>
 
           {/* Animated status indicator */}
@@ -1225,7 +1235,7 @@ export default function TopUpScreen() {
                 color: Colors.textSecondary,
               }}
             >
-              Listening for payment confirmation...
+              Payment processing, credits will be added shortly
             </Text>
           </View>
 
@@ -1262,10 +1272,40 @@ export default function TopUpScreen() {
             </Text>
           </Pressable>
 
+          {/* Re-open checkout in browser */}
+          <Pressable
+            onPress={() => {
+              if (Platform.OS === 'web') {
+                window.open(PAYNOW_CARD_CHECKOUT_URL, '_blank');
+              } else {
+                Linking.openURL(PAYNOW_CARD_CHECKOUT_URL);
+              }
+            }}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingVertical: 10,
+              paddingHorizontal: 16,
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <Ionicons name="open-outline" size={16} color="#1A237E" />
+            <Text
+              style={{
+                fontFamily: Fonts.semiBold,
+                fontSize: 14,
+                color: '#1A237E',
+              }}
+            >
+              Re-open Checkout Page
+            </Text>
+          </Pressable>
+
           {/* Helpful info */}
           <View
             style={{
-              marginTop: 12,
+              marginTop: 8,
               backgroundColor: 'rgba(255,111,0,0.06)',
               borderRadius: 12,
               borderCurve: 'continuous',
@@ -1295,16 +1335,13 @@ export default function TopUpScreen() {
                 lineHeight: 18,
               }}
             >
-              {'• Your browser opened the Paynow secure checkout\n• Enter your card details and confirm payment\n• Credits will be added automatically once confirmed\n• If the page didn\'t open, tap the button below'}
+              {'• Your browser opened the Paynow secure checkout\n• Enter your Visa/Mastercard details and confirm $1.25\n• Credits will be added automatically once confirmed\n• Tap "I\'ve Completed Payment" to check your balance'}
             </Text>
           </View>
 
-          {/* Re-open checkout link */}
+          {/* Cancel */}
           <Pressable
-            onPress={() => {
-              // Try to reinitiate if needed
-              handleRetry();
-            }}
+            onPress={handleRetry}
             style={{
               paddingVertical: 10,
               paddingHorizontal: 20,
