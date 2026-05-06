@@ -74,11 +74,13 @@ export default function TopUpScreen() {
   const credits = profile?.scan_credits ?? 0;
 
   // Derived config values (use fetched config or fallback defaults)
-  // Both EcoCash and Card use the same amount from app_config.paynow_amount
+  // EcoCash uses paynow_ecocash_amount, Card uses paynow_amount from app_config table
   const PAYMENT_AMOUNT_USD = paymentConfig
+    ? parseFloat(paymentConfig.paynow_ecocash_amount)
+    : DEFAULT_CARD_PAYMENT_AMOUNT_USD;
+  const CARD_PAYMENT_AMOUNT_USD = paymentConfig
     ? parseFloat(paymentConfig.paynow_amount)
     : DEFAULT_CARD_PAYMENT_AMOUNT_USD;
-  const CARD_PAYMENT_AMOUNT_USD = PAYMENT_AMOUNT_USD;
   const SCANS_PER_TOPUP = paymentConfig?.scans_per_payment ?? DEFAULT_SCANS_PER_TOPUP;
 
   // Fetch payment configuration from database on mount

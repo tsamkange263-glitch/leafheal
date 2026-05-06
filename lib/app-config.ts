@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 export interface PaymentConfig {
   paynow_integration_id: string;
   paynow_amount: string;
+  paynow_ecocash_amount: string;
   scans_per_payment: number;
 }
 
@@ -10,12 +11,14 @@ export interface PaymentConfig {
 const DEFAULT_CONFIG: PaymentConfig = {
   paynow_integration_id: '24565',
   paynow_amount: '1.25',
+  paynow_ecocash_amount: '1.25',
   scans_per_payment: 20,
 };
 
 const CONFIG_KEYS = [
   'paynow_integration_id',
   'paynow_amount',
+  'paynow_ecocash_amount',
   'scans_per_payment',
 ];
 
@@ -61,6 +64,7 @@ export async function getPaymentConfig(): Promise<PaymentConfig> {
     const config: PaymentConfig = {
       paynow_integration_id: configMap.paynow_integration_id ?? DEFAULT_CONFIG.paynow_integration_id,
       paynow_amount: configMap.paynow_amount ?? DEFAULT_CONFIG.paynow_amount,
+      paynow_ecocash_amount: configMap.paynow_ecocash_amount ?? configMap.paynow_amount ?? DEFAULT_CONFIG.paynow_ecocash_amount,
       scans_per_payment: parseInt(configMap.scans_per_payment ?? String(DEFAULT_CONFIG.scans_per_payment), 10),
     };
 
