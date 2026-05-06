@@ -12,11 +12,18 @@ export interface PlantNetResult {
   confidence: number;
   family: string;
   genus: string;
+  referenceImages: string[];
 }
 
 export interface PlantNetError {
   type: 'no_results' | 'low_confidence' | 'network_error' | 'api_error' | 'timeout';
   message: string;
+}
+
+interface PlantNetImage {
+  o: string; // original URL
+  m: string; // medium URL
+  s: string; // small URL
 }
 
 interface PlantNetSpecies {
@@ -30,6 +37,7 @@ interface PlantNetSpecies {
 interface PlantNetAPIResult {
   score: number;
   species: PlantNetSpecies;
+  images?: PlantNetImage[];
 }
 
 interface PlantNetAPIResponse {
@@ -42,11 +50,11 @@ const REQUEST_TIMEOUT_MS = 25000; // 25 second timeout
 
 /**
  * Identifies a plant from a local image URI using the PlantNet API.
- * Sends the image as multipart form data.
+ * Returns the top 2 results with reference images for user comparison.
  */
 export async function identifyPlantWithPlantNet(
   imageUri: string
-): Promise<{ success: true; data: PlantNetResult } | { success: false; error: PlantNetError }> {
+): Promise<{ success: true; data: PlantNetResult; topResults: PlantNetResult[] } | { success: false; error: PlantNetError }> {
   if (!PLANTNET_API_KEY) {
     return {
       success: false,
@@ -81,7 +89,7 @@ export async function identifyPlantWithPlantNet(
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     const response = await fetch(
-      `${PLANTNET_API_URL}?api-key=${PLANTNET_API_KEY}&include-related-images=false&no-reject=false&nb-results=5&lang=en`,
+      `${PLANTNET_API_URL}?api-key=${PLANTNET_API_KEY}&include-related-images=true&no-reject=false&nb-results=5&lang=en`,
       {
         method: 'POST',
         body: formData,
@@ -97,7 +105,6 @@ export async function identifyPlantWithPlantNet(
     if (!response.ok) {
       const statusCode = response.status;
 
-      // Handle specific error codes
       if (statusCode === 404) {
         return {
           success: false,
@@ -139,7 +146,6 @@ export async function identifyPlantWithPlantNet(
 
     const data: PlantNetAPIResponse = await response.json();
 
-    // Check if we have results
     if (!data.results || data.results.length === 0) {
       return {
         success: false,
@@ -150,10 +156,8 @@ export async function identifyPlantWithPlantNet(
       };
     }
 
-    // Get the best match (highest score)
     const bestResult = data.results[0];
 
-    // Check confidence threshold
     if (bestResult.score < MINIMUM_CONFIDENCE) {
       return {
         success: false,
@@ -164,24 +168,35 @@ export async function identifyPlantWithPlantNet(
       };
     }
 
-    // Extract common name (first one available) or use scientific name
-    const commonNames = bestResult.species.commonNames;
-    const plantName = commonNames && commonNames.length > 0
-      ? commonNames[0]
-      : bestResult.species.scientificNameWithoutAuthor;
+    // Extract top 2 results with reference images
+    const topResults: PlantNetResult[] = data.results.slice(0, 2).map((result) => {
+      const commonNames = result.species.commonNames;
+      const name = commonNames && commonNames.length > 0
+        ? commonNames[0]
+        : result.species.scientificNameWithoutAuthor;
+
+      // Extract reference image URLs (use medium size for display)
+      const refImages = (result.images || [])
+        .slice(0, 3)
+        .map((img) => img.m || img.o || img.s)
+        .filter(Boolean);
+
+      return {
+        plantName: name,
+        scientificName: result.species.scientificNameWithoutAuthor,
+        confidence: result.score,
+        family: result.species.family?.scientificNameWithoutAuthor || 'Unknown',
+        genus: result.species.genus?.scientificNameWithoutAuthor || 'Unknown',
+        referenceImages: refImages,
+      };
+    });
 
     return {
       success: true,
-      data: {
-        plantName,
-        scientificName: bestResult.species.scientificNameWithoutAuthor,
-        confidence: bestResult.score,
-        family: bestResult.species.family?.scientificNameWithoutAuthor || 'Unknown',
-        genus: bestResult.species.genus?.scientificNameWithoutAuthor || 'Unknown',
-      },
+      data: topResults[0],
+      topResults,
     };
   } catch (error: any) {
-    // Handle timeout/abort
     if (error?.name === 'AbortError') {
       return {
         success: false,
@@ -192,7 +207,6 @@ export async function identifyPlantWithPlantNet(
       };
     }
 
-    // Handle network errors
     if (error?.message?.includes('Network') || error?.message?.includes('fetch')) {
       return {
         success: false,

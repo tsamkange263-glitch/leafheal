@@ -12,22 +12,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@fastshot/auth';
-import { useTextGeneration } from '@fastshot/ai';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { CreditBadge } from '@/components/credit-badge';
-import { getHerbalReferenceContext, shouldRefreshCache, refreshHerbalReferenceCache, getTargetedPlantReference } from '@/lib/herbal-reference';
+import { getHerbalReferenceContext, shouldRefreshCache, refreshHerbalReferenceCache } from '@/lib/herbal-reference';
 import { identifyPlantWithPlantNet } from '@/lib/plantnet';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 
-// Timeout constants
-const REMEDY_TIMEOUT_MS = 30000; // 30 seconds for remedy generation
 const SHOW_CANCEL_AFTER_MS = 10000; // Show cancel/retry after 10 seconds
 
-type AnalysisStage = 'identifying' | 'enriching' | 'saving';
+type AnalysisStage = 'identifying' | 'saving';
 
 export default function ScanScreen() {
   const router = useRouter();
@@ -43,10 +40,6 @@ export default function ScanScreen() {
 
   const cancelledRef = useRef(false);
   const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const {
-    generateText,
-  } = useTextGeneration();
 
   const credits = profile?.scan_credits ?? 0;
 
@@ -142,24 +135,6 @@ export default function ScanScreen() {
     }
   };
 
-  // Helper: wrap a promise with a timeout
-  function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error(`${label} timed out after ${ms / 1000} seconds`));
-      }, ms);
-
-      promise
-        .then((result) => {
-          clearTimeout(timer);
-          resolve(result);
-        })
-        .catch((err) => {
-          clearTimeout(timer);
-          reject(err);
-        });
-    });
-  }
 
   const handleAnalyze = async () => {
     if (!selectedImage || !user?.id) return;
@@ -193,118 +168,17 @@ export default function ScanScreen() {
         return;
       }
 
-      const { plantName, scientificName, confidence, family, genus } = plantNetResult.data;
+      const { topResults } = plantNetResult;
       clearCancelTimer();
 
       if (cancelledRef.current) return;
 
       // ============================================================
-      // STAGE 2: AI enrichment — overview, remedies, health, precautions
-      // ============================================================
-      setAnalysisStage('enriching');
-      setStageMessage(`Identified: ${plantName}\nLooking up herbal remedies...`);
-      startCancelTimer();
-
-      let enrichmentData: any = null;
-
-      try {
-        // Get targeted reference from herbal PDFs
-        const targetedReference = await getTargetedPlantReference(plantName, scientificName);
-
-        const referenceSection = targetedReference
-          ? `\n\nRelevant herbal reference excerpts for ${plantName}:\n${targetedReference}\n\nUse the above reference data to enrich your response with specific preparation methods, dosages, and traditional uses. If the data doesn't match this plant, rely on your own knowledge.`
-          : '';
-
-        const enrichmentPrompt = `You are an expert botanist and herbalist. For the plant "${plantName}" (Scientific: ${scientificName}, Family: ${family}, Genus: ${genus}), provide comprehensive information.
-
-Respond ONLY with valid JSON:
-{
-  "overview": "A detailed 2-3 sentence description of the plant including its family, habitat, and distinguishing features.",
-  "remedies": {
-    "uses": "Main medicinal/herbal uses (2-3 sentences)",
-    "preparation": "How to prepare as a remedy - tea, poultice, tincture, etc. Include specific methods.",
-    "dosage": "Recommended dosage and frequency with specific measurements",
-    "benefits": "Key health benefits (2-3 items)",
-    "traditional_uses": "Traditional medicine uses from various cultures"
-  },
-  "precautions": "Important warnings, toxicity info, contraindications, and who should avoid this plant.",
-  "plant_health": {
-    "is_healthy": true,
-    "condition_name": "Healthy",
-    "symptoms": "No visible symptoms",
-    "cause": "N/A",
-    "cause_category": "healthy",
-    "severity": "none",
-    "treatments": {
-      "organic": "General organic care tips",
-      "chemical": "N/A"
-    },
-    "prevention_tips": "General prevention tips for common diseases of this species",
-    "general_care_tips": "General care tips for this plant including watering, sunlight, and soil preferences"
-  }
-}${referenceSection}
-
-Provide rich, specific, actionable information. Only return the JSON.`;
-
-        const enrichmentResult = await withTimeout(
-          generateText(enrichmentPrompt),
-          REMEDY_TIMEOUT_MS,
-          'Plant enrichment'
-        );
-
-        if (enrichmentResult && !cancelledRef.current) {
-          const match = enrichmentResult.match(/\{[\s\S]*\}/);
-          if (match) {
-            enrichmentData = JSON.parse(match[0]);
-          }
-        }
-      } catch (e: any) {
-        console.error('Enrichment error:', e);
-        // Non-fatal: provide fallback data
-        enrichmentData = {
-          overview: `${plantName} (${scientificName}) is a member of the ${family} family. It belongs to the genus ${genus}.`,
-          remedies: {
-            uses: `${plantName} has various traditional medicinal uses. Further research is recommended for specific applications.`,
-            preparation: 'Consult a qualified herbalist for preparation methods specific to your needs.',
-            dosage: 'Dosage varies by preparation method. Consult a healthcare professional.',
-            benefits: 'This plant has been used in traditional medicine. Specific benefits may vary.',
-            traditional_uses: 'Used in various folk medicine traditions. More detailed information is being researched.',
-          },
-          precautions: 'Always consult a healthcare professional before using any plant medicinally. Some plants may interact with medications or be harmful in certain conditions.',
-          plant_health: {
-            is_healthy: true,
-            condition_name: 'Healthy',
-            symptoms: 'No visible symptoms',
-            cause: 'N/A',
-            cause_category: 'healthy',
-            severity: 'none',
-            treatments: { organic: 'General organic care', chemical: 'N/A' },
-            prevention_tips: 'Ensure proper watering and sunlight.',
-            general_care_tips: 'Research specific care requirements for this species.',
-          },
-        };
-      }
-
-      if (cancelledRef.current) return;
-
-      // ============================================================
-      // STAGE 3: Save results
+      // STAGE 2: Upload image to storage
       // ============================================================
       setAnalysisStage('saving');
-      setStageMessage('Saving your results...');
-      clearCancelTimer();
+      setStageMessage('Saving your image...');
       setShowCancel(false);
-
-      // Build final result combining PlantNet identification + AI enrichment
-      const finalResult = {
-        plant_name: plantName,
-        scientific_name: scientificName,
-        confidence,
-        overview: enrichmentData?.overview || `${plantName} (${scientificName}) is a member of the ${family} family.`,
-        remedies: enrichmentData?.remedies || null,
-        precautions: enrichmentData?.precautions || null,
-        plant_health: enrichmentData?.plant_health || null,
-      };
 
       // Upload image to Supabase Storage
       let imageUrl = '';
@@ -332,25 +206,6 @@ Provide rich, specific, actionable information. Only return the JSON.`;
 
       if (cancelledRef.current) return;
 
-      // Save scan to database
-      const { data: scanData, error: insertErr } = await supabase
-        .from('scans')
-        .insert({
-          user_id: user.id,
-          image_url: imageUrl || null,
-          plant_name: finalResult.plant_name || 'Unknown Plant',
-          scientific_name: finalResult.scientific_name || null,
-          confidence: finalResult.confidence || 0.5,
-          overview: finalResult.overview || null,
-          remedies: finalResult.remedies || null,
-          precautions: finalResult.precautions || null,
-          plant_health: finalResult.plant_health || null,
-        })
-        .select()
-        .single();
-
-      if (insertErr) throw insertErr;
-
       // Deduct credit
       const newCredits = Math.max(0, credits - 1);
       await supabase
@@ -359,11 +214,15 @@ Provide rich, specific, actionable information. Only return the JSON.`;
         .eq('id', user.id);
       updateCredits(newCredits);
 
-      // Navigate to result
-      if (scanData && !cancelledRef.current) {
+      // Navigate to result screen with identification data (no AI enrichment yet)
+      if (!cancelledRef.current) {
         router.replace({
           pathname: '/result',
-          params: { scanId: scanData.id },
+          params: {
+            imageUrl: imageUrl || selectedImage,
+            localImageUri: selectedImage,
+            topResults: JSON.stringify(topResults),
+          },
         });
       }
     } catch (e: any) {
@@ -394,13 +253,11 @@ Provide rich, specific, actionable information. Only return the JSON.`;
   const getStageProgress = (): { step: number; total: number; label: string } => {
     switch (analysisStage) {
       case 'identifying':
-        return { step: 1, total: 3, label: 'Identifying Plant' };
-      case 'enriching':
-        return { step: 2, total: 3, label: 'Looking Up Remedies' };
+        return { step: 1, total: 2, label: 'Identifying Plant' };
       case 'saving':
-        return { step: 3, total: 3, label: 'Saving Results' };
+        return { step: 2, total: 2, label: 'Saving Results' };
       default:
-        return { step: 1, total: 3, label: 'Processing' };
+        return { step: 1, total: 2, label: 'Processing' };
     }
   };
 
@@ -848,7 +705,7 @@ Provide rich, specific, actionable information. Only return the JSON.`;
               marginTop: 4,
             }}
           >
-            {[1, 2, 3].map((stepNum) => {
+            {[1, 2].map((stepNum) => {
               const progress = getStageProgress();
               const isActive = stepNum === progress.step;
               const isComplete = stepNum < progress.step;
@@ -873,7 +730,7 @@ Provide rich, specific, actionable information. Only return the JSON.`;
 
           {/* Step labels */}
           <View style={{ flexDirection: 'row', gap: 16, marginTop: 2 }}>
-            {['Identify', 'Remedies', 'Save'].map((label, idx) => {
+            {['Identify', 'Save'].map((label, idx) => {
               const progress = getStageProgress();
               const isActive = idx + 1 === progress.step;
               const isComplete = idx + 1 < progress.step;
