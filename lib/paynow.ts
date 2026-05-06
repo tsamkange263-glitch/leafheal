@@ -24,6 +24,7 @@ export interface CardPaymentHashResponse {
   additionalinfo: string;
   returnurl: string;
   resulturl: string;
+  cancelurl: string;
   authemail: string;
 }
 
@@ -203,6 +204,7 @@ export async function initiateCardPayment(
     additionalinfo: hashData.additionalinfo as string,
     returnurl: hashData.returnurl as string,
     resulturl: hashData.resulturl as string,
+    cancelurl: hashData.cancelurl as string,
     authemail: hashData.authemail as string,
   };
 
@@ -218,6 +220,9 @@ export async function initiateCardPayment(
   formData.append('additionalinfo', cardData.additionalinfo);
   formData.append('returnurl', cardData.returnurl);
   formData.append('resulturl', cardData.resulturl);
+  if (cardData.cancelurl) {
+    formData.append('cancelurl', cardData.cancelurl);
+  }
   formData.append('authemail', cardData.authemail);
   formData.append('status', 'Message');
   formData.append('hash', cardData.hash);
