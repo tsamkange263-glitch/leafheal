@@ -19,10 +19,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { AilmentQuery } from '@/components/ailment-query';
-import type { Tables, RemedyData } from '@/lib/types';
+import type { Tables, RemedyData, PlantHealthData } from '@/lib/types';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
-type TabKey = 'overview' | 'remedies' | 'precautions';
+type TabKey = 'overview' | 'remedies' | 'precautions' | 'plant_health';
 
 export default function ResultScreen() {
   const router = useRouter();
@@ -106,6 +106,10 @@ export default function ResultScreen() {
     ? (scan.remedies as unknown as RemedyData)
     : null;
 
+  const plantHealth: PlantHealthData | null = scan?.plant_health
+    ? (scan.plant_health as unknown as PlantHealthData)
+    : null;
+
   const confidencePercent = scan?.confidence
     ? Math.round(scan.confidence * 100)
     : 0;
@@ -114,6 +118,7 @@ export default function ResultScreen() {
     { key: 'overview', label: 'Overview', icon: 'leaf' },
     { key: 'remedies', label: 'Herbal Remedies', icon: 'medkit' },
     { key: 'precautions', label: 'Precautions', icon: 'warning' },
+    { key: 'plant_health', label: 'Plant Health', icon: 'fitness' },
   ];
 
   if (loading) {
@@ -316,48 +321,57 @@ export default function ResultScreen() {
         <Animated.View
           entering={FadeInDown.delay(100).duration(500)}
           style={{
-            flexDirection: 'row',
             marginHorizontal: 16,
             marginTop: 16,
-            backgroundColor: Colors.card,
-            borderRadius: 14,
-            borderCurve: 'continuous',
-            padding: 4,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
           }}
         >
-          {tabs.map((tab) => (
-            <Pressable
-              key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
-              style={{
-                flex: 1,
-                paddingVertical: 10,
-                borderRadius: 11,
-                borderCurve: 'continuous',
-                backgroundColor: activeTab === tab.key ? Colors.primary : 'transparent',
-                alignItems: 'center',
-                flexDirection: 'row',
-                justifyContent: 'center',
-                gap: 4,
-              }}
-            >
-              <Ionicons
-                name={tab.icon as keyof typeof Ionicons.glyphMap}
-                size={14}
-                color={activeTab === tab.key ? Colors.white : Colors.textSecondary}
-              />
-              <Text
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flexGrow: 0 }}
+            contentContainerStyle={{
+              backgroundColor: Colors.card,
+              borderRadius: 14,
+              borderCurve: 'continuous',
+              padding: 4,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+              gap: 2,
+            }}
+          >
+            {tabs.map((tab) => (
+              <Pressable
+                key={tab.key}
+                onPress={() => setActiveTab(tab.key)}
                 style={{
-                  fontFamily: Fonts.semiBold,
-                  fontSize: 12,
-                  color: activeTab === tab.key ? Colors.white : Colors.textSecondary,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  borderRadius: 11,
+                  borderCurve: 'continuous',
+                  backgroundColor: activeTab === tab.key ? Colors.primary : 'transparent',
+                  alignItems: 'center',
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  gap: 4,
                 }}
               >
-                {tab.label}
-              </Text>
-            </Pressable>
-          ))}
+                <Ionicons
+                  name={tab.icon as keyof typeof Ionicons.glyphMap}
+                  size={14}
+                  color={activeTab === tab.key ? Colors.white : Colors.textSecondary}
+                />
+                <Text
+                  style={{
+                    fontFamily: Fonts.semiBold,
+                    fontSize: 11,
+                    color: activeTab === tab.key ? Colors.white : Colors.textSecondary,
+                  }}
+                  numberOfLines={1}
+                >
+                  {tab.label}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         </Animated.View>
 
         {/* Tab content */}
@@ -625,6 +639,387 @@ export default function ResultScreen() {
                   This information is for educational purposes only. Always
                   consult a qualified healthcare professional before using any
                   herbal remedy.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {activeTab === 'plant_health' && (
+            <View
+              style={{
+                backgroundColor: Colors.card,
+                borderRadius: 18,
+                borderCurve: 'continuous',
+                padding: 20,
+                gap: 16,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+              }}
+            >
+              {/* Header */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="fitness" size={20} color={plantHealth?.is_healthy ? Colors.success : Colors.error} />
+                <Text
+                  style={{
+                    fontFamily: Fonts.bold,
+                    fontSize: 17,
+                    color: Colors.textPrimary,
+                  }}
+                >
+                  Plant Health Diagnosis
+                </Text>
+              </View>
+
+              {plantHealth ? (
+                <>
+                  {/* Status badge */}
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 10,
+                      backgroundColor: plantHealth.is_healthy
+                        ? 'rgba(46,125,50,0.08)'
+                        : plantHealth.severity === 'severe'
+                        ? 'rgba(211,47,47,0.08)'
+                        : plantHealth.severity === 'moderate'
+                        ? 'rgba(255,111,0,0.08)'
+                        : 'rgba(255,193,7,0.08)',
+                      borderRadius: 14,
+                      borderCurve: 'continuous',
+                      padding: 14,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        backgroundColor: plantHealth.is_healthy
+                          ? 'rgba(46,125,50,0.15)'
+                          : plantHealth.severity === 'severe'
+                          ? 'rgba(211,47,47,0.15)'
+                          : plantHealth.severity === 'moderate'
+                          ? 'rgba(255,111,0,0.15)'
+                          : 'rgba(255,193,7,0.15)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Ionicons
+                        name={plantHealth.is_healthy ? 'checkmark-circle' : 'alert-circle'}
+                        size={22}
+                        color={
+                          plantHealth.is_healthy
+                            ? Colors.success
+                            : plantHealth.severity === 'severe'
+                            ? Colors.error
+                            : Colors.warning
+                        }
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        selectable
+                        style={{
+                          fontFamily: Fonts.bold,
+                          fontSize: 15,
+                          color: plantHealth.is_healthy
+                            ? Colors.success
+                            : plantHealth.severity === 'severe'
+                            ? Colors.error
+                            : Colors.warning,
+                        }}
+                      >
+                        {plantHealth.condition_name}
+                      </Text>
+                      {!plantHealth.is_healthy && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                          <View
+                            style={{
+                              paddingHorizontal: 8,
+                              paddingVertical: 2,
+                              borderRadius: 6,
+                              backgroundColor: plantHealth.severity === 'severe'
+                                ? 'rgba(211,47,47,0.15)'
+                                : plantHealth.severity === 'moderate'
+                                ? 'rgba(255,111,0,0.15)'
+                                : 'rgba(255,193,7,0.15)',
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontFamily: Fonts.semiBold,
+                                fontSize: 11,
+                                color: plantHealth.severity === 'severe'
+                                  ? Colors.error
+                                  : Colors.warning,
+                                textTransform: 'uppercase',
+                              }}
+                            >
+                              {plantHealth.severity}
+                            </Text>
+                          </View>
+                          <View
+                            style={{
+                              paddingHorizontal: 8,
+                              paddingVertical: 2,
+                              borderRadius: 6,
+                              backgroundColor: 'rgba(46,125,50,0.1)',
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontFamily: Fonts.semiBold,
+                                fontSize: 11,
+                                color: Colors.primary,
+                                textTransform: 'uppercase',
+                              }}
+                            >
+                              {plantHealth.cause_category?.replace('_', ' ')}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Symptoms */}
+                  {plantHealth.symptoms && !plantHealth.is_healthy && (
+                    <View style={{ gap: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="eye-outline" size={16} color={Colors.primary} />
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.primary }}>
+                          Symptoms Observed
+                        </Text>
+                      </View>
+                      <Text
+                        selectable
+                        style={{
+                          fontFamily: Fonts.regular,
+                          fontSize: 14,
+                          color: Colors.textPrimary,
+                          lineHeight: 22,
+                          paddingLeft: 22,
+                        }}
+                      >
+                        {plantHealth.symptoms}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Cause */}
+                  {plantHealth.cause && !plantHealth.is_healthy && (
+                    <View style={{ gap: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="bug-outline" size={16} color={Colors.primary} />
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.primary }}>
+                          Likely Cause
+                        </Text>
+                      </View>
+                      <Text
+                        selectable
+                        style={{
+                          fontFamily: Fonts.regular,
+                          fontSize: 14,
+                          color: Colors.textPrimary,
+                          lineHeight: 22,
+                          paddingLeft: 22,
+                        }}
+                      >
+                        {plantHealth.cause}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Treatments */}
+                  {plantHealth.treatments && !plantHealth.is_healthy && (
+                    <View style={{ gap: 10 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="medkit-outline" size={16} color={Colors.primary} />
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.primary }}>
+                          Recommended Treatments
+                        </Text>
+                      </View>
+
+                      {/* Organic treatments */}
+                      {plantHealth.treatments.organic && (
+                        <View
+                          style={{
+                            backgroundColor: 'rgba(139,195,74,0.08)',
+                            borderRadius: 12,
+                            borderCurve: 'continuous',
+                            padding: 12,
+                            marginLeft: 22,
+                            gap: 6,
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Ionicons name="leaf-outline" size={14} color={Colors.accent} />
+                            <Text style={{ fontFamily: Fonts.semiBold, fontSize: 13, color: Colors.primary }}>
+                              Organic / Natural
+                            </Text>
+                          </View>
+                          <Text
+                            selectable
+                            style={{
+                              fontFamily: Fonts.regular,
+                              fontSize: 13,
+                              color: Colors.textPrimary,
+                              lineHeight: 20,
+                            }}
+                          >
+                            {plantHealth.treatments.organic}
+                          </Text>
+                        </View>
+                      )}
+
+                      {/* Chemical treatments */}
+                      {plantHealth.treatments.chemical && (
+                        <View
+                          style={{
+                            backgroundColor: 'rgba(33,150,243,0.06)',
+                            borderRadius: 12,
+                            borderCurve: 'continuous',
+                            padding: 12,
+                            marginLeft: 22,
+                            gap: 6,
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Ionicons name="flask-outline" size={14} color="#1976D2" />
+                            <Text style={{ fontFamily: Fonts.semiBold, fontSize: 13, color: '#1976D2' }}>
+                              Chemical
+                            </Text>
+                          </View>
+                          <Text
+                            selectable
+                            style={{
+                              fontFamily: Fonts.regular,
+                              fontSize: 13,
+                              color: Colors.textPrimary,
+                              lineHeight: 20,
+                            }}
+                          >
+                            {plantHealth.treatments.chemical}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Prevention Tips */}
+                  {plantHealth.prevention_tips && !plantHealth.is_healthy && (
+                    <View style={{ gap: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="shield-checkmark-outline" size={16} color={Colors.primary} />
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.primary }}>
+                          Prevention Tips
+                        </Text>
+                      </View>
+                      <Text
+                        selectable
+                        style={{
+                          fontFamily: Fonts.regular,
+                          fontSize: 14,
+                          color: Colors.textPrimary,
+                          lineHeight: 22,
+                          paddingLeft: 22,
+                        }}
+                      >
+                        {plantHealth.prevention_tips}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* General Care Tips (shown always, especially when healthy) */}
+                  {plantHealth.general_care_tips && (
+                    <View style={{ gap: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="sunny-outline" size={16} color={Colors.primary} />
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.primary }}>
+                          {plantHealth.is_healthy ? 'General Care Tips' : 'Ongoing Care'}
+                        </Text>
+                      </View>
+                      <Text
+                        selectable
+                        style={{
+                          fontFamily: Fonts.regular,
+                          fontSize: 14,
+                          color: Colors.textPrimary,
+                          lineHeight: 22,
+                          paddingLeft: 22,
+                        }}
+                      >
+                        {plantHealth.general_care_tips}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Healthy plant message */}
+                  {plantHealth.is_healthy && (
+                    <View
+                      style={{
+                        backgroundColor: 'rgba(46,125,50,0.06)',
+                        borderRadius: 12,
+                        borderCurve: 'continuous',
+                        padding: 14,
+                        flexDirection: 'row',
+                        gap: 10,
+                        marginTop: 4,
+                      }}
+                    >
+                      <Ionicons name="happy-outline" size={20} color={Colors.success} />
+                      <Text
+                        style={{
+                          fontFamily: Fonts.regular,
+                          fontSize: 13,
+                          color: Colors.success,
+                          flex: 1,
+                          lineHeight: 19,
+                        }}
+                      >
+                        This plant appears healthy! No visible signs of disease, pest damage, or nutrient deficiencies were detected. Continue following the care tips above to maintain plant health.
+                      </Text>
+                    </View>
+                  )}
+                </>
+              ) : (
+                <Text
+                  style={{
+                    fontFamily: Fonts.regular,
+                    fontSize: 15,
+                    color: Colors.textSecondary,
+                    textAlign: 'center',
+                    paddingVertical: 20,
+                  }}
+                >
+                  No plant health data available for this scan.
+                </Text>
+              )}
+
+              {/* Agronomist disclaimer */}
+              <View
+                style={{
+                  backgroundColor: 'rgba(33,150,243,0.06)',
+                  borderRadius: 12,
+                  borderCurve: 'continuous',
+                  padding: 14,
+                  flexDirection: 'row',
+                  gap: 10,
+                  marginTop: 4,
+                }}
+              >
+                <Ionicons name="information-circle" size={20} color="#1976D2" />
+                <Text
+                  style={{
+                    fontFamily: Fonts.regular,
+                    fontSize: 12,
+                    color: '#1976D2',
+                    flex: 1,
+                    lineHeight: 18,
+                  }}
+                >
+                  This AI-powered diagnosis is for guidance only. For critical crop decisions, confirm with laboratory testing or consult a certified agronomist.
                 </Text>
               </View>
             </View>

@@ -124,6 +124,7 @@ export type Database = {
           image_url: string | null;
           overview: string | null;
           plant_name: string | null;
+          plant_health: Json | null;
           precautions: string | null;
           remedies: Json | null;
           scientific_name: string | null;
@@ -136,6 +137,7 @@ export type Database = {
           image_url?: string | null;
           overview?: string | null;
           plant_name?: string | null;
+          plant_health?: Json | null;
           precautions?: string | null;
           remedies?: Json | null;
           scientific_name?: string | null;
@@ -148,6 +150,7 @@ export type Database = {
           image_url?: string | null;
           overview?: string | null;
           plant_name?: string | null;
+          plant_health?: Json | null;
           precautions?: string | null;
           remedies?: Json | null;
           scientific_name?: string | null;
@@ -246,6 +249,21 @@ export interface RemedyData {
   traditional_uses?: string;
 }
 
+export interface PlantHealthData {
+  is_healthy: boolean;
+  condition_name: string;
+  symptoms: string;
+  cause: string;
+  cause_category: 'fungal' | 'bacterial' | 'viral' | 'nutrient_deficiency' | 'pest_damage' | 'environmental_stress' | 'healthy' | 'unknown';
+  severity: 'none' | 'mild' | 'moderate' | 'severe';
+  treatments: {
+    organic: string;
+    chemical: string;
+  };
+  prevention_tips: string;
+  general_care_tips?: string;
+}
+
 export interface ScanResult {
   plant_name: string;
   scientific_name: string;
@@ -253,4 +271,5 @@ export interface ScanResult {
   overview: string;
   remedies: RemedyData;
   precautions: string;
+  plant_health: PlantHealthData;
 }

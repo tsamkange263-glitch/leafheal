@@ -142,10 +142,12 @@ ${herbalContext}
 Blend the above reference data with your own expertise to provide rich, accurate, evidence-based remedy information.`
         : '';
 
-      // Step 1: Analyze the image to identify the plant
+      // Step 1: Analyze the image to identify the plant and assess health
       await analyzeImage({
         imageUrl: selectedImage,
-        prompt: `You are an expert botanist and herbalist. Analyze this plant/leaf image and identify the species. Respond ONLY with valid JSON in this exact format, no other text:
+        prompt: `You are an expert botanist, herbalist, and plant pathologist (agronomist). Analyze this plant/leaf image and identify the species. Also carefully examine the leaf anatomy for any signs of disease, nutrient deficiency, pest damage, or environmental stress.
+
+Respond ONLY with valid JSON in this exact format, no other text:
 {
   "plant_name": "Common Name",
   "scientific_name": "Scientific name in italics format",
@@ -158,10 +160,29 @@ Blend the above reference data with your own expertise to provide rich, accurate
     "benefits": "Key health benefits (2-3 items) supported by traditional use and available evidence",
     "traditional_uses": "Traditional medicine uses from various cultures, especially African and Appalachian traditions where applicable"
   },
-  "precautions": "Important warnings, toxicity information, contraindications, and who should avoid this plant."
+  "precautions": "Important warnings, toxicity information, contraindications, and who should avoid this plant.",
+  "plant_health": {
+    "is_healthy": false,
+    "condition_name": "Name of the disease or condition (e.g. 'Powdery Mildew', 'Nitrogen Deficiency', 'Aphid Infestation') or 'Healthy' if no issues detected",
+    "symptoms": "Describe the visible symptoms observed on the leaf — color changes, spots, wilting, curling, holes, lesions, discoloration patterns, etc.",
+    "cause": "Explain the likely cause in detail — the pathogen, pest, or environmental factor responsible",
+    "cause_category": "One of: fungal, bacterial, viral, nutrient_deficiency, pest_damage, environmental_stress, healthy, unknown",
+    "severity": "One of: none (if healthy), mild, moderate, severe — based on the extent of visible damage",
+    "treatments": {
+      "organic": "Recommended organic/natural treatment options (neem oil, companion planting, biological controls, etc.)",
+      "chemical": "Recommended chemical treatment options (specific fungicides, pesticides, or fertilizers with application guidance)"
+    },
+    "prevention_tips": "How to prevent this condition in the future — cultural practices, environmental controls, resistant varieties, etc.",
+    "general_care_tips": "General care tips for keeping this plant healthy (watering, light, soil, pruning). Always include this even if plant is healthy."
+  }
 }${referenceSection}
 
-If you cannot identify the plant with reasonable confidence, still provide your best guess with a lower confidence score.`,
+PLANT HEALTH ANALYSIS INSTRUCTIONS:
+- Carefully examine leaf color, texture, spots, edges, veins, and overall structure
+- If the plant appears healthy with no visible issues, set is_healthy to true, condition_name to "Healthy", cause_category to "healthy", severity to "none"
+- If disease or stress is detected, provide detailed diagnostic information
+- Consider common diseases for the identified species
+- If you cannot identify the plant with reasonable confidence, still provide your best guess with a lower confidence score.`,
       });
     } catch (e) {
       console.error('Analysis error:', e);
@@ -199,7 +220,8 @@ If you cannot identify the plant with reasonable confidence, still provide your 
   "confidence": 0.7,
   "overview": "Description",
   "remedies": { "uses": "", "preparation": "", "dosage": "", "benefits": "", "traditional_uses": "" },
-  "precautions": "Warnings"
+  "precautions": "Warnings",
+  "plant_health": { "is_healthy": true, "condition_name": "Healthy", "symptoms": "", "cause": "", "cause_category": "healthy", "severity": "none", "treatments": { "organic": "", "chemical": "" }, "prevention_tips": "", "general_care_tips": "General care guidance for this plant." }
 }
 Only return the JSON, nothing else.`
         );
@@ -243,6 +265,7 @@ Only return the JSON, nothing else.`
           overview: parsed.overview || null,
           remedies: parsed.remedies || null,
           precautions: parsed.precautions || null,
+          plant_health: parsed.plant_health || null,
         })
         .select()
         .single();
