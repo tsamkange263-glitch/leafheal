@@ -26,11 +26,12 @@ export default function HomeScreen() {
   const { profile, setProfile, recentScans, setRecentScans } = useAppStore();
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [hasEverPaid, setHasEverPaid] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const [profileRes, scansRes] = await Promise.all([
+      const [profileRes, scansRes, paymentsRes] = await Promise.all([
         supabase.from('users').select('*').eq('id', user.id).single(),
         supabase
           .from('scans')
@@ -38,10 +39,17 @@ export default function HomeScreen() {
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
           .limit(3),
+        supabase
+          .from('payments')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('status', 'success')
+          .limit(1),
       ]);
 
       if (profileRes.data) setProfile(profileRes.data);
       if (scansRes.data) setRecentScans(scansRes.data);
+      setHasEverPaid((paymentsRes.data?.length ?? 0) > 0);
     } catch (e) {
       console.error('Error fetching home data:', e);
     } finally {
@@ -107,7 +115,7 @@ export default function HomeScreen() {
 
       {/* Credits */}
       <Animated.View entering={FadeInDown.delay(100).duration(500)}>
-        <CreditBadge credits={credits} />
+        <CreditBadge credits={credits} isTrial={!hasEverPaid} />
       </Animated.View>
 
       {/* Scan Button */}
@@ -255,6 +263,7 @@ export default function HomeScreen() {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            style={{ flexGrow: 0 }}
             contentContainerStyle={{ gap: 8, paddingRight: 8 }}
           >
             {recentScans.map((scan) => (

@@ -8,11 +8,13 @@ interface CreditBadgeProps {
   credits: number;
   showTopUp?: boolean;
   compact?: boolean;
+  isTrial?: boolean;
 }
 
-export function CreditBadge({ credits, showTopUp = true, compact = false }: CreditBadgeProps) {
+export function CreditBadge({ credits, showTopUp = true, compact = false, isTrial = false }: CreditBadgeProps) {
   const router = useRouter();
   const isLow = credits <= 2;
+  const isEmpty = credits === 0;
 
   if (compact) {
     return (
@@ -47,60 +49,94 @@ export function CreditBadge({ credits, showTopUp = true, compact = false }: Cred
   }
 
   return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-      }}
-    >
+    <View style={{ gap: 6 }}>
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          backgroundColor: isLow ? 'rgba(255,111,0,0.12)' : 'rgba(46,125,50,0.12)',
-          paddingHorizontal: 14,
-          paddingVertical: 8,
-          borderRadius: 20,
-          gap: 6,
+          gap: 8,
         }}
       >
-        <Ionicons
-          name="leaf"
-          size={16}
-          color={isLow ? Colors.warning : Colors.primary}
-        />
-        <Text
+        <View
           style={{
-            fontFamily: Fonts.bold,
-            fontSize: 14,
-            color: isLow ? Colors.warning : Colors.primary,
-            fontVariant: ['tabular-nums'],
-          }}
-        >
-          {credits} scans remaining
-        </Text>
-      </View>
-      {showTopUp && (
-        <Pressable
-          onPress={() => router.push('/topup')}
-          style={{
-            backgroundColor: Colors.primary,
-            paddingHorizontal: 16,
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: isEmpty
+              ? 'rgba(211,47,47,0.1)'
+              : isLow
+                ? 'rgba(255,111,0,0.12)'
+                : 'rgba(46,125,50,0.12)',
+            paddingHorizontal: 14,
             paddingVertical: 8,
             borderRadius: 20,
+            gap: 6,
           }}
         >
+          <Ionicons
+            name={isTrial ? 'gift' : 'leaf'}
+            size={16}
+            color={isEmpty ? Colors.error : isLow ? Colors.warning : Colors.primary}
+          />
           <Text
             style={{
               fontFamily: Fonts.bold,
-              fontSize: 13,
-              color: Colors.white,
+              fontSize: 14,
+              color: isEmpty ? Colors.error : isLow ? Colors.warning : Colors.primary,
+              fontVariant: ['tabular-nums'],
             }}
           >
-            Top Up
+            {isEmpty
+              ? 'No scans left'
+              : isTrial
+                ? `${credits} free scans remaining`
+                : `${credits} scans remaining`}
           </Text>
-        </Pressable>
+        </View>
+        {showTopUp && (
+          <Pressable
+            onPress={() => router.push('/topup')}
+            style={{
+              backgroundColor: Colors.primary,
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 20,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: Fonts.bold,
+                fontSize: 13,
+                color: Colors.white,
+              }}
+            >
+              Top Up
+            </Text>
+          </Pressable>
+        )}
+      </View>
+      {isTrial && credits > 0 && (
+        <Text
+          style={{
+            fontFamily: Fonts.regular,
+            fontSize: 12,
+            color: Colors.textSecondary,
+            marginLeft: 4,
+          }}
+        >
+          Try the app free — top up anytime for more
+        </Text>
+      )}
+      {isEmpty && (
+        <Text
+          style={{
+            fontFamily: Fonts.regular,
+            fontSize: 12,
+            color: Colors.textSecondary,
+            marginLeft: 4,
+          }}
+        >
+          Top up for $1 to get 20 plant scans
+        </Text>
       )}
     </View>
   );

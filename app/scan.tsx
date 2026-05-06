@@ -67,11 +67,11 @@ export default function ScanScreen() {
   const pickImage = async (useCamera: boolean) => {
     if (credits <= 0) {
       Alert.alert(
-        'No Credits',
-        'You need scan credits to identify plants. Top up now?',
+        'Free Scans Used Up',
+        "You've used all your free scans! Top up to continue identifying plants — $1 for 20 scans.",
         [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Top Up', onPress: () => router.push('/topup') },
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Top Up Now', onPress: () => router.push('/topup') },
         ]
       );
       return;
@@ -507,10 +507,10 @@ Only return the JSON, nothing else.`
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  gap: 6,
+                  gap: 8,
                   backgroundColor: 'rgba(233,30,99,0.15)',
                   paddingHorizontal: 16,
-                  paddingVertical: 10,
+                  paddingVertical: 12,
                   borderRadius: 20,
                 }}
               >
@@ -522,7 +522,7 @@ Only return the JSON, nothing else.`
                     color: Colors.ecocash,
                   }}
                 >
-                  Need more scans? Top up with EcoCash
+                  Free scans used up — $1 for 20 more
                 </Text>
               </Pressable>
             )}
