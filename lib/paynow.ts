@@ -77,11 +77,17 @@ export function normalizePhone(phone: string): string {
 }
 
 /**
- * Generate a unique transaction reference
+ * Generate a unique transaction reference.
+ * If userId is provided, embeds a short user identifier for payment matching.
  */
-export function generateTransactionRef(): string {
+export function generateTransactionRef(userId?: string): string {
   const timestamp = Date.now().toString(36).toUpperCase();
   const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+  if (userId) {
+    // Include first 8 chars of user ID for traceability
+    const userShort = userId.replace(/-/g, '').substring(0, 8).toUpperCase();
+    return `HERBSCAN-${userShort}-${timestamp}-${random}`;
+  }
   return `HERB-${timestamp}-${random}`;
 }
 

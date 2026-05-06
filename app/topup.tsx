@@ -43,7 +43,7 @@ const CARD_MAX_DB_POLL_ATTEMPTS = 45; // 45 * 4s = 3 minutes max
 
 // Paynow Advanced Payment Button - hosted checkout link for Visa/Mastercard
 const PAYNOW_CARD_CHECKOUT_URL =
-  'https://www.paynow.co.zw/Payment/BillPaymentLink/?q=aWQ9MjQ1NjUmYW1vdW50PTEuMjUmYW1vdW50X3F1YW50aXR5PTAuMDAmbD0w';
+  'https://www.paynow.co.zw/Payment/BillPaymentLink/?q=aWQ9MjQ1NjUmYW1vdW50PTEuMjUmYW1vdW50X3F1YW50aXR5PTAuMDAmbD0x';
 
 export default function TopUpScreen() {
   const router = useRouter();
@@ -192,7 +192,7 @@ export default function TopUpScreen() {
     setStatus('processing');
     setErrorMsg('');
 
-    const reference = generateTransactionRef();
+    const reference = generateTransactionRef(user.id);
 
     try {
       // Create payment record in database first
@@ -363,7 +363,7 @@ export default function TopUpScreen() {
     setStatus('processing');
     setErrorMsg('');
 
-    const reference = generateTransactionRef();
+    const reference = generateTransactionRef(user.id);
 
     try {
       // Create payment record in database with payment_method
