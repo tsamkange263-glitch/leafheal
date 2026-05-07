@@ -141,11 +141,13 @@ export default function ResultScreen() {
   }, []);
 
   const fetchScan = useCallback(async (id: string) => {
+    if (!user?.id) return;
     try {
       const { data, error } = await supabase
         .from('scans')
         .select('*')
         .eq('id', id)
+        .eq('user_id', user.id)
         .single();
 
       if (error) throw error;
@@ -158,7 +160,7 @@ export default function ResultScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   // Check if archived
   useEffect(() => {

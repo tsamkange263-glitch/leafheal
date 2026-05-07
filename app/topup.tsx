@@ -142,7 +142,8 @@ export default function TopUpScreen() {
             await supabase
               .from('payments')
               .update({ status: 'success' })
-              .eq('id', paymentId);
+              .eq('id', paymentId)
+              .eq('user_id', user!.id);
 
             if (user?.id) {
               const newCredits = credits + SCANS_PER_TOPUP;
@@ -164,7 +165,8 @@ export default function TopUpScreen() {
             await supabase
               .from('payments')
               .update({ status: 'failed' })
-              .eq('id', paymentId);
+              .eq('id', paymentId)
+              .eq('user_id', user!.id);
 
             setStatus('failed');
             setErrorMsg(result.error || 'Payment was not completed.');
@@ -176,7 +178,8 @@ export default function TopUpScreen() {
             await supabase
               .from('payments')
               .update({ status: 'timeout' })
-              .eq('id', paymentId);
+              .eq('id', paymentId)
+              .eq('user_id', user!.id);
 
             setStatus('failed');
             setErrorMsg(
@@ -218,7 +221,7 @@ export default function TopUpScreen() {
         cardDbPollAttemptsRef.current += 1;
 
         try {
-          const dbStatus = await checkPaymentStatusFromDB(paymentId);
+          const dbStatus = await checkPaymentStatusFromDB(paymentId, user?.id || '');
 
           if (isCancelledRef.current) return;
 
@@ -305,7 +308,8 @@ export default function TopUpScreen() {
         await supabase
           .from('payments')
           .update({ status: 'failed' })
-          .eq('id', payment.id);
+          .eq('id', payment.id)
+          .eq('user_id', user.id);
 
         setStatus('failed');
         setErrorMsg(result.error || 'Transaction failed. Please try again.');
@@ -315,7 +319,8 @@ export default function TopUpScreen() {
       await supabase
         .from('payments')
         .update({ status: 'sent' })
-        .eq('id', payment.id);
+        .eq('id', payment.id)
+        .eq('user_id', user.id);
 
       setStatus('polling');
       startEcoCashPolling(result.pollUrl, payment.id);
@@ -384,7 +389,8 @@ export default function TopUpScreen() {
       await supabase
         .from('payments')
         .update({ status: 'sent' })
-        .eq('id', payment.id);
+        .eq('id', payment.id)
+        .eq('user_id', user.id);
 
       setStatus('awaiting_card');
       startCardDbPolling(payment.id);
@@ -409,7 +415,7 @@ export default function TopUpScreen() {
     setIsCheckingManually(true);
 
     try {
-      const dbStatus = await checkPaymentStatusFromDB(paymentId);
+      const dbStatus = await checkPaymentStatusFromDB(paymentId, user.id);
 
       if (dbStatus === 'success') {
         const { data: userData } = await supabase

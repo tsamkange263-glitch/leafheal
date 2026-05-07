@@ -87,11 +87,13 @@ export default function ArchiveScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
+            if (!user?.id) return;
             try {
               await supabase
                 .from('archived_remedies')
                 .delete()
-                .eq('id', item.id);
+                .eq('id', item.id)
+                .eq('user_id', user.id);
               removeArchivedId(item.scan_id);
               setItems((prev) => prev.filter((i) => i.id !== item.id));
             } catch (e) {

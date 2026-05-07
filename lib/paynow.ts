@@ -241,12 +241,14 @@ export function generatePaymentReference(userId: string): string {
 /**
  * Check payment status by querying the payments table directly.
  * Used for card payments where webhook updates the DB.
+ * Requires userId to ensure users can only check their own payments.
  */
-export async function checkPaymentStatusFromDB(paymentId: string): Promise<string> {
+export async function checkPaymentStatusFromDB(paymentId: string, userId: string): Promise<string> {
   const { data, error } = await supabase
     .from("payments")
     .select("status")
     .eq("id", paymentId)
+    .eq("user_id", userId)
     .single();
 
   if (error) {
