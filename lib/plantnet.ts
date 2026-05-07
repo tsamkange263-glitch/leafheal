@@ -1,7 +1,13 @@
 /**
  * PlantNet API integration for plant identification.
  * Uses the PlantNet.org API to identify plants from images.
+ *
+ * Production APK Fix: Uses expo-file-system to read images as base64 before
+ * creating Blobs, because fetch(file://) is unreliable in production Hermes builds.
  */
+
+import { File as ExpoFile, Paths } from 'expo-file-system';
+import { Platform } from 'react-native';
 
 const PLANTNET_API_KEY = process.env.EXPO_PUBLIC_PLANTNET_API_KEY;
 const PLANTNET_API_URL = `https://my-api.plantnet.org/v2/identify/all`;
@@ -50,11 +56,69 @@ const REQUEST_TIMEOUT_MS = 25000; // 25 second timeout
 
 /**
  * Converts a local image URI to a proper Blob for multipart form-data upload.
- * This ensures cross-platform compatibility (works on both web and native).
+ *
+ * In production APK builds (Hermes), fetch(file://) can fail silently or return
+ * empty data. This function uses expo-file-system's new File API (v19+) which
+ * implements Blob directly, or reads as base64 on native platforms.
+ * On web, the standard fetch approach works fine.
  */
 async function imageUriToBlob(imageUri: string): Promise<Blob> {
-  const response = await fetch(imageUri);
-  return await response.blob();
+  // On web, fetch works fine with blob URIs and data URIs
+  if (Platform.OS === 'web') {
+    const response = await fetch(imageUri);
+    return await response.blob();
+  }
+
+  // On native (Android/iOS), use expo-file-system to read the file reliably.
+  // This is the critical fix for production APK builds where fetch(file://) fails.
+  try {
+    // Normalize the URI - ensure it has file:// prefix for FileSystem
+    let normalizedUri = imageUri;
+    if (!normalizedUri.startsWith('file://') && !normalizedUri.startsWith('content://') && !normalizedUri.startsWith('http')) {
+      normalizedUri = `file://${normalizedUri}`;
+    }
+
+    // For content:// URIs (Android media picker), copy to a cache file first
+    if (normalizedUri.startsWith('content://')) {
+      const sourceFile = new ExpoFile(normalizedUri);
+      const destFile = new ExpoFile(Paths.cache, `plantnet_upload_${Date.now()}.jpg`);
+      sourceFile.copy(destFile);
+      normalizedUri = destFile.uri;
+    }
+
+    // Use the new expo-file-system File API to read as base64 (reliable in production)
+    const file = new ExpoFile(normalizedUri);
+    const base64Data = await file.base64();
+
+    // Convert base64 to a byte array
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+
+    // Determine MIME type from the URI
+    const extension = imageUri.split('.').pop()?.toLowerCase()?.split('?')[0] || 'jpg';
+    const mimeType = extension === 'png' ? 'image/png' : 'image/jpeg';
+
+    return new Blob([byteArray], { type: mimeType });
+  } catch (fileSystemError: any) {
+    // Fallback: try the fetch approach in case FileSystem fails
+    // (e.g., for http:// URLs or data: URIs)
+    console.warn('FileSystem read failed, falling back to fetch:', fileSystemError?.message);
+    try {
+      const response = await fetch(imageUri);
+      return await response.blob();
+    } catch (fetchError: any) {
+      throw new Error(
+        `Failed to read image for upload. ` +
+        `FileSystem error: ${fileSystemError?.message || 'unknown'}. ` +
+        `Fetch error: ${fetchError?.message || 'unknown'}. ` +
+        `URI: ${imageUri.substring(0, 100)}`
+      );
+    }
+  }
 }
 
 /**
@@ -110,6 +174,11 @@ export async function identifyPlantWithPlantNet(
 
     if (!response.ok) {
       const statusCode = response.status;
+      // Try to read the error body for better diagnostics in production
+      let errorBody = '';
+      try {
+        errorBody = await response.text();
+      } catch { /* ignore */ }
 
       if (statusCode === 404) {
         return {
@@ -145,7 +214,7 @@ export async function identifyPlantWithPlantNet(
         success: false,
         error: {
           type: 'api_error',
-          message: `Identification failed (error ${statusCode}). Please try again.`,
+          message: `Identification failed (error ${statusCode}): ${errorBody.substring(0, 100) || 'Unknown error'}`,
         },
       };
     }
@@ -213,7 +282,9 @@ export async function identifyPlantWithPlantNet(
       };
     }
 
-    if (error?.message?.includes('Network') || error?.message?.includes('fetch')) {
+    const errorMsg = error?.message || String(error);
+
+    if (errorMsg.includes('Network') || errorMsg.includes('fetch') || errorMsg.includes('Failed to connect')) {
       return {
         success: false,
         error: {
@@ -223,11 +294,12 @@ export async function identifyPlantWithPlantNet(
       };
     }
 
+    // Capture full error details for production debugging
     return {
       success: false,
       error: {
         type: 'api_error',
-        message: 'An unexpected error occurred during identification. Please try again.',
+        message: `Identification failed: ${errorMsg.substring(0, 150)}`,
       },
     };
   }
@@ -294,6 +366,11 @@ export async function identifyPlantDisease(
 
     if (!response.ok) {
       const statusCode = response.status;
+      // Try to read the error body for production diagnostics
+      let errorBody = '';
+      try {
+        errorBody = await response.text();
+      } catch { /* ignore */ }
 
       if (statusCode === 404) {
         return {
@@ -329,7 +406,7 @@ export async function identifyPlantDisease(
         success: false,
         error: {
           type: 'api_error',
-          message: `Disease identification failed (error ${statusCode}). Please try again.`,
+          message: `Disease identification failed (error ${statusCode}): ${errorBody.substring(0, 100) || 'Unknown error'}`,
         },
       };
     }
@@ -388,7 +465,9 @@ export async function identifyPlantDisease(
       };
     }
 
-    if (error?.message?.includes('Network') || error?.message?.includes('fetch')) {
+    const errorMsg = error?.message || String(error);
+
+    if (errorMsg.includes('Network') || errorMsg.includes('fetch') || errorMsg.includes('Failed to connect')) {
       return {
         success: false,
         error: {
@@ -398,11 +477,12 @@ export async function identifyPlantDisease(
       };
     }
 
+    // Capture full error details for production debugging
     return {
       success: false,
       error: {
         type: 'api_error',
-        message: 'An unexpected error occurred during disease identification. Please try again.',
+        message: `Disease identification failed: ${errorMsg.substring(0, 150)}`,
       },
     };
   }

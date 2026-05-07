@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
+  Platform,
   Pressable,
   Alert,
   ActivityIndicator,
@@ -11,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { File as ExpoFile } from 'expo-file-system';
 import { useAuth } from '@fastshot/auth';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
@@ -184,11 +186,27 @@ export default function ScanScreen() {
       setShowCancel(false);
 
       // Upload image to Supabase Storage
+      // Uses expo-file-system on native to avoid fetch(file://) issues in production APK
       let imageUrl = '';
       try {
         const fileName = `${user.id}/${Date.now()}.jpg`;
-        const response = await fetch(selectedImage);
-        const blob = await response.blob();
+        let blob: Blob;
+
+        if (Platform.OS === 'web') {
+          const response = await fetch(selectedImage);
+          blob = await response.blob();
+        } else {
+          // Read file as base64 using expo-file-system (reliable in production builds)
+          const file = new ExpoFile(selectedImage);
+          const base64Data = await file.base64();
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          blob = new Blob([byteArray], { type: 'image/jpeg' });
+        }
 
         const { error: uploadErr } = await supabase.storage
           .from('scan-images')
