@@ -715,63 +715,45 @@ Provide specific, actionable advice with real product/compound names where appli
                   boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
                 })}
               >
-                {/* Option header with confidence */}
+                {/* Match rank label */}
                 <View
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     paddingHorizontal: 16,
-                    paddingTop: 16,
-                    paddingBottom: 10,
+                    paddingTop: 14,
+                    paddingBottom: 6,
                   }}
                 >
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <View
-                        style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: 12,
-                          backgroundColor: index === 0 ? Colors.primary : Colors.accent,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontFamily: Fonts.bold,
-                            fontSize: 12,
-                            color: Colors.white,
-                          }}
-                        >
-                          {index + 1}
-                        </Text>
-                      </View>
-                      <Text
-                        selectable
-                        style={{
-                          fontFamily: Fonts.bold,
-                          fontSize: 18,
-                          color: Colors.textPrimary,
-                          flex: 1,
-                        }}
-                        numberOfLines={1}
-                      >
-                        {result.plantName}
-                      </Text>
-                    </View>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: index === 0
+                        ? 'rgba(139,195,74,0.12)'
+                        : 'rgba(156,39,176,0.08)',
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      borderRadius: 8,
+                    }}
+                  >
+                    <Ionicons
+                      name={index === 0 ? 'trophy' : 'ribbon'}
+                      size={12}
+                      color={index === 0 ? Colors.primary : Colors.accent}
+                    />
                     <Text
-                      selectable
                       style={{
-                        fontFamily: Fonts.regular,
-                        fontSize: 14,
-                        color: Colors.textSecondary,
-                        fontStyle: 'italic',
-                        paddingLeft: 32,
+                        fontFamily: Fonts.bold,
+                        fontSize: 11,
+                        color: index === 0 ? Colors.primary : Colors.accent,
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.5,
                       }}
                     >
-                      {result.scientificName}
+                      {index === 0 ? 'Most Likely' : 'Second Match'}
                     </Text>
                   </View>
 
@@ -817,6 +799,39 @@ Provide specific, actionable advice with real product/compound names where appli
                       }}
                     >
                       {Math.round(result.confidence * 100)}%
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Option header with plant name */}
+                <View
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingBottom: 10,
+                  }}
+                >
+                  <View style={{ gap: 3 }}>
+                    <Text
+                      selectable
+                      style={{
+                        fontFamily: Fonts.bold,
+                        fontSize: 18,
+                        color: Colors.textPrimary,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {result.plantName}
+                    </Text>
+                    <Text
+                      selectable
+                      style={{
+                        fontFamily: Fonts.regular,
+                        fontSize: 14,
+                        color: Colors.textSecondary,
+                        fontStyle: 'italic',
+                      }}
+                    >
+                      {result.scientificName}
                     </Text>
                   </View>
                 </View>
