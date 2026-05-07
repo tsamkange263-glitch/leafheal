@@ -14,7 +14,7 @@ import { Fonts } from '@/constants/Typography';
 import { getTargetedPlantReference } from '@/lib/herbal-reference';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
-const AILMENT_QUERY_TIMEOUT_MS = 60000; // 60 seconds for AI text generation
+const AILMENT_QUERY_TIMEOUT_MS = 90000; // 90 seconds — AI gateway has 6s server timeout + retries with backoff
 
 interface AilmentResponse {
   id: string;
@@ -27,6 +27,23 @@ interface AilmentResponse {
 interface AilmentQueryProps {
   plantName: string;
   scientificName: string | null;
+}
+
+// Safe wrapper for generateText that prevents orphaned promise rejections.
+// The @fastshot/ai client uses Promise.race internally which can leave
+// unhandled rejections from orphaned timeout promises.
+function safeGenerateText(
+  generateText: (prompt: string, options?: any) => Promise<string | null>,
+  prompt: string,
+  options?: any
+): Promise<string | null> {
+  try {
+    const promise = generateText(prompt, options);
+    promise.catch(() => {});
+    return promise;
+  } catch {
+    return Promise.resolve(null);
+  }
 }
 
 // Sanitize text to remove control characters and ensure clean content for API
@@ -153,9 +170,9 @@ export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
       // Build prompt with targeted reference context
       const prompt = buildPrompt(plantName, scientificName, currentQuery, targetedReference);
 
-      // Use the hook's generateText with timeout
+      // Use the hook's generateText with timeout (wrapped safely to avoid orphaned rejections)
       let result = await withTimeout(
-        generateText(prompt, { temperature: 0.7 }),
+        safeGenerateText(generateText, prompt, { temperature: 0.7 }),
         AILMENT_QUERY_TIMEOUT_MS
       );
 
@@ -165,7 +182,7 @@ export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
       if (!result && targetedReference) {
         const fallbackPrompt = buildPrompt(plantName, scientificName, currentQuery);
         result = await withTimeout(
-          generateText(fallbackPrompt, { temperature: 0.7 }),
+          safeGenerateText(generateText, fallbackPrompt, { temperature: 0.7 }),
           AILMENT_QUERY_TIMEOUT_MS
         );
       }
@@ -196,7 +213,7 @@ export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
             `Describe how the plant "${plantName}" can help with "${currentQuery}". Include preparation, dosage, and warnings. Plain text only, no markdown. 200 words max.`
           );
           const fallbackResult = await withTimeout(
-            generateText(minimalPrompt, { temperature: 0.7 }),
+            safeGenerateText(generateText, minimalPrompt, { temperature: 0.7 }),
             AILMENT_QUERY_TIMEOUT_MS
           );
 

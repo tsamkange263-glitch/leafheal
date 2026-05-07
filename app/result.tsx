@@ -28,9 +28,11 @@ import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
 type TabKey = 'overview' | 'remedies' | 'precautions' | 'plant_health';
 
-const REMEDY_TIMEOUT_MS = 60000; // 60 seconds for AI text generation (LLM calls can be slow)
+const REMEDY_TIMEOUT_MS = 90000; // 90 seconds — AI gateway has 6s server timeout + 3 retries with backoff
 
-// Helper: wrap a promise with a timeout that properly handles cleanup
+// Helper: wrap a promise with a timeout that properly handles cleanup.
+// Unlike Promise.race, this properly clears the timer AND attaches handlers
+// to the original promise so no orphaned rejections escape.
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -56,6 +58,25 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
         }
       });
   });
+}
+
+// Safe wrapper for generateText that never throws unhandled rejections.
+// The @fastshot/ai client internally uses Promise.race for timeouts, which can
+// leave orphaned rejection promises. This ensures they're always caught.
+function safeGenerateText(
+  generateText: (prompt: string, options?: any) => Promise<string | null>,
+  prompt: string,
+  options?: any
+): Promise<string | null> {
+  try {
+    const promise = generateText(prompt, options);
+    // Attach a no-op catch to prevent unhandled rejection if the promise
+    // is orphaned by our withTimeout wrapper
+    promise.catch(() => {});
+    return promise;
+  } catch {
+    return Promise.resolve(null);
+  }
 }
 
 export default function ResultScreen() {
@@ -217,7 +238,7 @@ Provide rich, specific, actionable information. Only return the JSON.`;
 
       try {
         const enrichmentResult = await withTimeout(
-          generateText(enrichmentPrompt),
+          safeGenerateText(generateText, enrichmentPrompt),
           REMEDY_TIMEOUT_MS,
           'Plant enrichment'
         );
@@ -445,7 +466,7 @@ Provide specific, actionable advice with real product/compound names where appli
       }
 
       const adviceResult = await withTimeout(
-        generateText(advicePrompt),
+        safeGenerateText(generateText, advicePrompt),
         REMEDY_TIMEOUT_MS,
         'Disease advice'
       );
