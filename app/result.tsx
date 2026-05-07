@@ -290,9 +290,10 @@ Provide rich, specific, actionable information. Only return the JSON.`;
     }
   };
 
-  // Load disease results when Plant Health tab is selected
+  // Load pre-fetched disease results immediately when scan is ready (not waiting for tab click)
+  // This ensures results are cached and instantly available when user navigates to Plant Health tab
   useEffect(() => {
-    if (activeTab !== 'plant_health' || !scan || !mode || mode !== 'detail') return;
+    if (!scan || !mode || mode !== 'detail') return;
     if (diseaseApiCalled.current) return;
 
     const cacheKey = scan.id || userImageUrl || params.localImageUri || '';
@@ -320,19 +321,19 @@ Provide rich, specific, actionable information. Only return the JSON.`;
       }
     }
 
-    // Check if there was a pre-fetched error
+    // Check if there was a pre-fetched error — don't block, allow retry from tab
     if (params.diseaseError) {
       diseaseApiCalled.current = true;
       setDiseaseError(params.diseaseError);
       return;
     }
 
-    // Fallback: call the API directly if no pre-fetched results
-    const imageUrl = scan.image_url || userImageUrl || params.localImageUri;
+    // Fallback: call the API directly using the local image URI for best reliability
+    const imageUrl = params.localImageUri || userImageUrl || scan.image_url;
     if (!imageUrl) return;
 
     fetchDiseaseIdentification(imageUrl, cacheKey);
-  }, [activeTab, scan, mode]);
+  }, [scan, mode]);
 
   const fetchDiseaseIdentification = async (imageUrl: string, cacheKey: string) => {
     diseaseApiCalled.current = true;
@@ -436,7 +437,8 @@ Provide specific, actionable advice with real product/compound names where appli
 
   const retryDiseaseIdentification = () => {
     diseaseApiCalled.current = false;
-    const imageUrl = scan?.image_url || userImageUrl || params.localImageUri;
+    // Prefer local image URI for retry — it's the actual captured file that works best with the API
+    const imageUrl = params.localImageUri || userImageUrl || scan?.image_url;
     if (!imageUrl) return;
     const cacheKey = scan?.id || imageUrl;
     fetchDiseaseIdentification(imageUrl, cacheKey);

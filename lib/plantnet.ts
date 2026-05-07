@@ -49,6 +49,15 @@ const MINIMUM_CONFIDENCE = 0.05; // 5% minimum confidence threshold
 const REQUEST_TIMEOUT_MS = 25000; // 25 second timeout
 
 /**
+ * Converts a local image URI to a proper Blob for multipart form-data upload.
+ * This ensures cross-platform compatibility (works on both web and native).
+ */
+async function imageUriToBlob(imageUri: string): Promise<Blob> {
+  const response = await fetch(imageUri);
+  return await response.blob();
+}
+
+/**
  * Identifies a plant from a local image URI using the PlantNet API.
  * Returns the top 2 results with reference images for user comparison.
  */
@@ -69,17 +78,14 @@ export async function identifyPlantWithPlantNet(
     // Create form data with the image
     const formData = new FormData();
 
-    // Get the file name from the URI
-    const fileName = imageUri.split('/').pop() || 'plant.jpg';
-    const fileExtension = fileName.split('.').pop()?.toLowerCase() || 'jpg';
-    const mimeType = fileExtension === 'png' ? 'image/png' : 'image/jpeg';
+    // Get the file name from the URI (strip query params)
+    const rawFileName = imageUri.split('/').pop()?.split('?')[0] || 'plant.jpg';
+    const fileExtension = rawFileName.split('.').pop()?.toLowerCase() || 'jpg';
+    const fileName = `plant_id.${fileExtension}`;
 
-    // Append the image as a file to the form data
-    formData.append('images', {
-      uri: imageUri,
-      name: fileName,
-      type: mimeType,
-    } as any);
+    // Convert image URI to Blob for reliable cross-platform multipart upload
+    const imageBlob = await imageUriToBlob(imageUri);
+    formData.append('images', imageBlob, fileName);
 
     // Add organ parameter (leaf is the most common)
     formData.append('organs', 'auto');
@@ -251,6 +257,7 @@ export interface DiseaseIdentificationResponse {
 /**
  * Identifies plant diseases from a leaf image using the PlantNet Disease API.
  * Returns detected diseases ranked by confidence, with related reference images.
+ * The image is properly converted to a Blob before sending as multipart form-data.
  */
 export async function identifyPlantDisease(
   imageUri: string
@@ -258,15 +265,15 @@ export async function identifyPlantDisease(
   try {
     const formData = new FormData();
 
-    const fileName = imageUri.split('/').pop() || 'leaf.jpg';
-    const fileExtension = fileName.split('.').pop()?.toLowerCase() || 'jpg';
-    const mimeType = fileExtension === 'png' ? 'image/png' : 'image/jpeg';
+    // Extract clean filename from URI (strip query params if present)
+    const rawFileName = imageUri.split('/').pop()?.split('?')[0] || 'leaf.jpg';
+    const fileExtension = rawFileName.split('.').pop()?.toLowerCase() || 'jpg';
+    const fileName = `plant_disease.${fileExtension}`;
 
-    formData.append('image', {
-      uri: imageUri,
-      name: fileName,
-      type: mimeType,
-    } as any);
+    // Convert image URI to a proper Blob for reliable multipart form-data upload
+    // This fixes 400 errors caused by improper file serialization on web
+    const imageBlob = await imageUriToBlob(imageUri);
+    formData.append('image', imageBlob, fileName);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), DISEASE_REQUEST_TIMEOUT_MS);
