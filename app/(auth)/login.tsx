@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,17 @@ import {
   Pressable,
   ScrollView,
   KeyboardAvoidingView,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@fastshot/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
+
+const PENDING_CONFIRMATION_KEY = 'herbscan_pending_email_confirmation';
 
 export default function LoginScreen() {
   const [isRegister, setIsRegister] = useState(false);
@@ -21,7 +24,13 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [confirmationSent, setConfirmationSent] = useState(false);
+  const [confirmationEmail, setConfirmationEmail] = useState('');
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [emailNotConfirmedError, setEmailNotConfirmedError] = useState(false);
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ confirmed?: string; error?: string }>();
+
   const {
     signInWithGoogle,
     signInWithEmail,
@@ -31,15 +40,32 @@ export default function LoginScreen() {
     clearError,
   } = useAuth();
 
+  // Handle redirect params (email confirmed success or error from callback)
+  useEffect(() => {
+    if (params.confirmed === 'true') {
+      setSuccessMessage('Email confirmed! You can now log in.');
+      // Clear pending confirmation flag
+      AsyncStorage.removeItem(PENDING_CONFIRMATION_KEY);
+      // Auto-dismiss after 8 seconds
+      const timer = setTimeout(() => setSuccessMessage(null), 8000);
+      return () => clearTimeout(timer);
+    }
+    if (params.error) {
+      // Error passed from auth callback
+      setSuccessMessage(null);
+    }
+  }, [params.confirmed, params.error]);
+
   const handleSubmit = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter email and password');
       return;
     }
     if (isRegister && !fullName.trim()) {
-      Alert.alert('Error', 'Please enter your full name');
       return;
     }
+
+    setEmailNotConfirmedError(false);
+    setSuccessMessage(null);
 
     try {
       if (isRegister) {
@@ -47,25 +73,171 @@ export default function LoginScreen() {
           data: { full_name: fullName.trim() },
         });
         if (result?.emailConfirmationRequired) {
-          Alert.alert(
-            'Check Your Email',
-            `We sent a verification link to ${email}. Please verify before signing in.`
-          );
-          setIsRegister(false);
+          // Store flag so callback page knows this is email confirmation, not OAuth
+          await AsyncStorage.setItem(PENDING_CONFIRMATION_KEY, 'true');
+          setConfirmationEmail(email.trim());
+          setConfirmationSent(true);
         }
       } else {
         await signInWithEmail(email.trim(), password);
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Authentication failed';
-      Alert.alert('Error', msg);
+      // Detect unconfirmed email error from Supabase
+      if (
+        msg.toLowerCase().includes('email not confirmed') ||
+        msg.toLowerCase().includes('email_not_confirmed')
+      ) {
+        setEmailNotConfirmedError(true);
+      }
     }
   };
 
   const toggleMode = () => {
     clearError();
     setIsRegister(!isRegister);
+    setConfirmationSent(false);
+    setEmailNotConfirmedError(false);
+    setSuccessMessage(null);
   };
+
+  // Email confirmation sent screen
+  if (confirmationSent) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          paddingTop: insets.top + 20,
+          paddingBottom: insets.bottom + 20,
+          paddingHorizontal: 24,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: '#F1F8E9',
+        }}
+      >
+        <View
+          style={{
+            width: 80,
+            height: 80,
+            borderRadius: 40,
+            backgroundColor: 'rgba(46,125,50,0.1)',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: 24,
+          }}
+        >
+          <Ionicons name="mail-outline" size={40} color={Colors.primary} />
+        </View>
+
+        <Text
+          style={{
+            fontFamily: Fonts.extraBold,
+            fontSize: 24,
+            color: Colors.textPrimary,
+            textAlign: 'center',
+            marginBottom: 12,
+          }}
+        >
+          Check Your Email
+        </Text>
+
+        <Text
+          style={{
+            fontFamily: Fonts.regular,
+            fontSize: 15,
+            color: Colors.textSecondary,
+            textAlign: 'center',
+            lineHeight: 22,
+            maxWidth: 320,
+            marginBottom: 8,
+          }}
+        >
+          A confirmation link has been sent to
+        </Text>
+
+        <Text
+          style={{
+            fontFamily: Fonts.bold,
+            fontSize: 15,
+            color: Colors.textPrimary,
+            textAlign: 'center',
+            marginBottom: 20,
+          }}
+        >
+          {confirmationEmail}
+        </Text>
+
+        <View
+          style={{
+            backgroundColor: 'rgba(46,125,50,0.06)',
+            borderRadius: 14,
+            borderCurve: 'continuous',
+            padding: 16,
+            marginBottom: 32,
+            width: '100%',
+            maxWidth: 340,
+          }}
+        >
+          <Text
+            style={{
+              fontFamily: Fonts.regular,
+              fontSize: 14,
+              color: Colors.textSecondary,
+              textAlign: 'center',
+              lineHeight: 20,
+            }}
+          >
+            Please check your inbox and click the link to verify your account. You may need to check
+            your spam folder.
+          </Text>
+        </View>
+
+        <Pressable
+          onPress={() => {
+            setConfirmationSent(false);
+            setIsRegister(false);
+            clearError();
+            // Don't clear the AsyncStorage flag here — user might still click the email link
+          }}
+          style={({ pressed }) => ({
+            paddingVertical: 14,
+            paddingHorizontal: 32,
+            backgroundColor: Colors.primary,
+            borderRadius: 14,
+            borderCurve: 'continuous',
+            opacity: pressed ? 0.9 : 1,
+          })}
+        >
+          <Text
+            style={{
+              fontFamily: Fonts.bold,
+              fontSize: 15,
+              color: Colors.white,
+            }}
+          >
+            Back to Login
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => {
+            setConfirmationSent(false);
+          }}
+          style={{ marginTop: 16 }}
+        >
+          <Text
+            style={{
+              fontFamily: Fonts.regular,
+              fontSize: 13,
+              color: Colors.textLight,
+            }}
+          >
+            {"Didn't receive it? Try registering again"}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
@@ -105,6 +277,39 @@ export default function LoginScreen() {
             HerbScan
           </Text>
         </View>
+
+        {/* Success Banner (email confirmed) */}
+        {successMessage && (
+          <View
+            style={{
+              backgroundColor: 'rgba(46,125,50,0.08)',
+              borderRadius: 12,
+              borderCurve: 'continuous',
+              padding: 14,
+              marginBottom: 20,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(46,125,50,0.15)',
+            }}
+          >
+            <Ionicons name="checkmark-circle" size={22} color={Colors.primary} />
+            <Text
+              style={{
+                fontFamily: Fonts.semiBold,
+                fontSize: 14,
+                color: Colors.primary,
+                flex: 1,
+              }}
+            >
+              {successMessage}
+            </Text>
+            <Pressable onPress={() => setSuccessMessage(null)} hitSlop={8}>
+              <Ionicons name="close" size={18} color={Colors.primary} />
+            </Pressable>
+          </View>
+        )}
 
         {/* Toggle */}
         <View
@@ -308,7 +513,51 @@ export default function LoginScreen() {
           )}
         </View>
 
-        {error && (
+        {/* Email not confirmed warning */}
+        {emailNotConfirmedError && (
+          <View
+            style={{
+              backgroundColor: 'rgba(245,158,11,0.08)',
+              borderRadius: 12,
+              borderCurve: 'continuous',
+              padding: 14,
+              marginTop: 14,
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(245,158,11,0.2)',
+            }}
+          >
+            <Ionicons name="warning" size={20} color="#F59E0B" style={{ marginTop: 1 }} />
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  fontFamily: Fonts.semiBold,
+                  fontSize: 14,
+                  color: '#92400E',
+                  marginBottom: 4,
+                }}
+              >
+                Email not verified
+              </Text>
+              <Text
+                style={{
+                  fontFamily: Fonts.regular,
+                  fontSize: 13,
+                  color: '#92400E',
+                  lineHeight: 18,
+                }}
+              >
+                Please check your inbox for the confirmation link and verify your email address
+                before logging in.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* General error (not email confirmation) */}
+        {error && !emailNotConfirmedError && (
           <View
             style={{
               backgroundColor: 'rgba(211,47,47,0.08)',

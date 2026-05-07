@@ -1,12 +1,15 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { FontMap } from '@/constants/Typography';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { AuthProvider } from '@fastshot/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+
+const PENDING_CONFIRMATION_KEY = 'herbscan_pending_email_confirmation';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -50,12 +53,30 @@ if (Platform.OS !== 'web') {
 
 export default function RootLayout() {
   const [loaded, error] = useFonts(FontMap);
+  const router = useRouter();
 
   useEffect(() => {
     if (loaded || error) {
       SplashScreen.hideAsync();
     }
   }, [loaded, error]);
+
+  // Handle native email confirmation: if pending flag is set when user signs in,
+  // it means they clicked the email confirmation link which auto-signed them in.
+  // Sign them out and redirect to login with success message.
+  const handleSignIn = useCallback(async () => {
+    if (Platform.OS === 'web') return; // Web handled by callback page
+
+    const pending = await AsyncStorage.getItem(PENDING_CONFIRMATION_KEY);
+    if (pending === 'true') {
+      await AsyncStorage.removeItem(PENDING_CONFIRMATION_KEY);
+      await supabase.auth.signOut();
+      // Small delay to let auth state settle before navigation
+      setTimeout(() => {
+        router.replace('/(auth)/login?confirmed=true');
+      }, 100);
+    }
+  }, [router]);
 
   if (!loaded && !error) {
     return null;
@@ -68,6 +89,7 @@ export default function RootLayout() {
         login: '/(auth)/login',
         afterLogin: '/(tabs)',
       }}
+      onSignIn={handleSignIn}
     >
       <StatusBar style="dark" />
       <Stack
