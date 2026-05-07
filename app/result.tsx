@@ -112,6 +112,11 @@ export default function ResultScreen() {
   const diseaseCache = useRef<{ [key: string]: { data: DiseaseIdentificationResponse; advice: string | null } }>({});
   const diseaseApiCalled = useRef(false);
 
+  // Per-disease treatment advice state
+  const [selectedDiseaseIdx, setSelectedDiseaseIdx] = useState<number | null>(null);
+  const [perDiseaseAdvice, setPerDiseaseAdvice] = useState<{ [key: number]: string }>({});
+  const [perDiseaseAdviceLoading, setPerDiseaseAdviceLoading] = useState<{ [key: number]: boolean }>({});
+
   const scanId = scan?.id || params.scanId;
   const isArchived = scanId ? archivedIds.includes(scanId) : false;
 
@@ -477,6 +482,67 @@ Provide specific, actionable advice with real product/compound names where appli
     if (!imageUrl) return;
     const cacheKey = scan?.id || imageUrl;
     fetchDiseaseIdentification(imageUrl, cacheKey);
+  };
+
+  // Generate treatment advice for a specific disease when tapped
+  const handleDiseaseTap = async (idx: number) => {
+    // Toggle: collapse if already selected
+    if (selectedDiseaseIdx === idx) {
+      setSelectedDiseaseIdx(null);
+      return;
+    }
+    setSelectedDiseaseIdx(idx);
+
+    // If advice already loaded, just show it
+    if (perDiseaseAdvice[idx]) return;
+
+    // Generate advice for this specific disease
+    if (!diseaseData || !diseaseData.diseases[idx]) return;
+    const disease = diseaseData.diseases[idx];
+    const plantName = scan?.plant_name || 'Unknown Plant';
+    const scientificPlantName = scan?.scientific_name || '';
+
+    setPerDiseaseAdviceLoading((prev) => ({ ...prev, [idx]: true }));
+
+    try {
+      const prompt = `You are an expert agronomist and plant pathologist. The plant "${plantName}" (${scientificPlantName}) has been diagnosed with the following disease:
+
+Disease: ${disease.name}${disease.scientificName ? ` (${disease.scientificName})` : ''}
+Confidence: ${Math.round(disease.confidence * 100)}%
+${disease.description ? `Description: ${disease.description}` : ''}
+
+Provide comprehensive, specific treatment advice for this particular disease in JSON format:
+{
+  "severity": "mild|moderate|severe",
+  "summary": "1-2 sentence diagnosis summary specific to this disease",
+  "organic_treatments": ["specific organic treatment 1", "organic treatment 2", "organic treatment 3"],
+  "chemical_treatments": ["specific chemical/fungicide treatment 1", "chemical treatment 2"],
+  "immediate_actions": ["urgent action 1", "urgent action 2"],
+  "prevention": ["prevention tip 1", "prevention tip 2", "prevention tip 3"],
+  "spread_risk": "Assessment of how likely this disease will spread",
+  "recovery_timeline": "Expected recovery time with proper treatment"
+}
+
+Provide specific, actionable advice with real product/compound names where applicable. Only return valid JSON.`;
+
+      const result = await withTimeout(
+        safeGenerateText(generateText, prompt),
+        REMEDY_TIMEOUT_MS,
+        `Disease advice for ${disease.name}`
+      );
+
+      if (result) {
+        const match = result.match(/\{[\s\S]*\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          setPerDiseaseAdvice((prev) => ({ ...prev, [idx]: JSON.stringify(parsed) }));
+        }
+      }
+    } catch (e: any) {
+      console.error(`Disease advice generation error for ${disease.name}:`, e);
+    } finally {
+      setPerDiseaseAdviceLoading((prev) => ({ ...prev, [idx]: false }));
+    }
   };
 
   const remedies: RemedyData | null = scan?.remedies
@@ -1704,171 +1770,481 @@ Provide specific, actionable advice with real product/compound names where appli
                           {diseaseData.diseases.length} Disease{diseaseData.diseases.length > 1 ? 's' : ''} Detected
                         </Text>
                         <Text style={{ fontFamily: Fonts.regular, fontSize: 12, color: Colors.textSecondary, marginTop: 1 }}>
-                          Ranked by confidence score
+                          Top {Math.min(2, diseaseData.diseases.length)} shown · Tap for treatment details
                         </Text>
                       </View>
                     </View>
 
-                    {/* Disease list */}
-                    {diseaseData.diseases.slice(0, 5).map((disease, idx) => (
-                      <Animated.View
-                        key={idx}
-                        entering={FadeInDown.delay(100 * idx).duration(400)}
-                        style={{
-                          backgroundColor: idx === 0 ? 'rgba(211,47,47,0.04)' : Colors.background,
-                          borderRadius: 14,
-                          borderCurve: 'continuous',
-                          padding: 14,
-                          gap: 10,
-                          borderWidth: idx === 0 ? 1 : 0.5,
-                          borderColor: idx === 0 ? 'rgba(211,47,47,0.15)' : Colors.border,
-                        }}
-                      >
-                        {/* Disease header */}
-                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-                          <View
-                            style={{
-                              width: 28,
-                              height: 28,
+                    {/* Disease list — Top 2 diseases */}
+                    {diseaseData.diseases.slice(0, 2).map((disease, idx) => {
+                      const isExpanded = selectedDiseaseIdx === idx;
+                      const adviceLoading = perDiseaseAdviceLoading[idx];
+                      const adviceStr = perDiseaseAdvice[idx];
+
+                      return (
+                        <Animated.View
+                          key={idx}
+                          entering={FadeInDown.delay(100 * idx).duration(400)}
+                        >
+                          <Pressable
+                            onPress={() => handleDiseaseTap(idx)}
+                            style={({ pressed }) => ({
+                              backgroundColor: idx === 0 ? 'rgba(211,47,47,0.04)' : Colors.background,
                               borderRadius: 14,
-                              backgroundColor: idx === 0
-                                ? 'rgba(211,47,47,0.12)'
-                                : idx === 1
-                                ? 'rgba(255,111,0,0.1)'
-                                : 'rgba(255,193,7,0.1)',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
+                              borderCurve: 'continuous',
+                              padding: 14,
+                              gap: 10,
+                              borderWidth: idx === 0 ? 1 : 0.5,
+                              borderColor: isExpanded
+                                ? (idx === 0 ? 'rgba(211,47,47,0.35)' : 'rgba(255,111,0,0.35)')
+                                : (idx === 0 ? 'rgba(211,47,47,0.15)' : Colors.border),
+                              opacity: pressed ? 0.85 : 1,
+                            })}
+                            accessibilityRole="button"
+                            accessibilityLabel={`View treatment for ${disease.name}`}
                           >
-                            <Text
-                              style={{
-                                fontFamily: Fonts.bold,
-                                fontSize: 12,
-                                color: idx === 0 ? Colors.error : idx === 1 ? Colors.warning : '#FFC107',
-                              }}
-                            >
-                              {idx + 1}
-                            </Text>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              selectable
-                              style={{
-                                fontFamily: Fonts.bold,
-                                fontSize: 14,
-                                color: Colors.textPrimary,
-                              }}
-                            >
-                              {disease.name}
-                            </Text>
-                            {disease.scientificName && (
+                            {/* Disease header */}
+                            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                              <View
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 14,
+                                  backgroundColor: idx === 0
+                                    ? 'rgba(211,47,47,0.12)'
+                                    : 'rgba(255,111,0,0.1)',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    fontFamily: Fonts.bold,
+                                    fontSize: 12,
+                                    color: idx === 0 ? Colors.error : Colors.warning,
+                                  }}
+                                >
+                                  {idx + 1}
+                                </Text>
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text
+                                  selectable
+                                  style={{
+                                    fontFamily: Fonts.bold,
+                                    fontSize: 14,
+                                    color: Colors.textPrimary,
+                                  }}
+                                >
+                                  {disease.name}
+                                </Text>
+                                {disease.scientificName && (
+                                  <Text
+                                    selectable
+                                    style={{
+                                      fontFamily: Fonts.regular,
+                                      fontSize: 12,
+                                      color: Colors.textSecondary,
+                                      fontStyle: 'italic',
+                                      marginTop: 1,
+                                    }}
+                                  >
+                                    {disease.scientificName}
+                                  </Text>
+                                )}
+                              </View>
+                              {/* Confidence badge */}
+                              <View
+                                style={{
+                                  backgroundColor: disease.confidence > 0.5
+                                    ? 'rgba(211,47,47,0.1)'
+                                    : disease.confidence > 0.25
+                                    ? 'rgba(255,111,0,0.1)'
+                                    : 'rgba(255,193,7,0.1)',
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 4,
+                                  borderRadius: 8,
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    fontFamily: Fonts.bold,
+                                    fontSize: 12,
+                                    fontVariant: ['tabular-nums'],
+                                    color: disease.confidence > 0.5
+                                      ? Colors.error
+                                      : disease.confidence > 0.25
+                                      ? Colors.warning
+                                      : '#D4A017',
+                                  }}
+                                >
+                                  {Math.round(disease.confidence * 100)}%
+                                </Text>
+                              </View>
+                              {/* Expand/collapse chevron */}
+                              <Ionicons
+                                name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                                size={18}
+                                color={Colors.textLight}
+                                style={{ marginTop: 4 }}
+                              />
+                            </View>
+
+                            {/* Description if available */}
+                            {disease.description && (
                               <Text
                                 selectable
                                 style={{
                                   fontFamily: Fonts.regular,
-                                  fontSize: 12,
+                                  fontSize: 13,
                                   color: Colors.textSecondary,
-                                  fontStyle: 'italic',
-                                  marginTop: 1,
+                                  lineHeight: 19,
+                                  paddingLeft: 38,
                                 }}
                               >
-                                {disease.scientificName}
+                                {disease.description}
                               </Text>
                             )}
-                          </View>
-                          {/* Confidence badge */}
-                          <View
-                            style={{
-                              backgroundColor: disease.confidence > 0.5
-                                ? 'rgba(211,47,47,0.1)'
-                                : disease.confidence > 0.25
-                                ? 'rgba(255,111,0,0.1)'
-                                : 'rgba(255,193,7,0.1)',
-                              paddingHorizontal: 8,
-                              paddingVertical: 4,
-                              borderRadius: 8,
-                            }}
-                          >
-                            <Text
-                              style={{
-                                fontFamily: Fonts.bold,
-                                fontSize: 12,
-                                fontVariant: ['tabular-nums'],
-                                color: disease.confidence > 0.5
-                                  ? Colors.error
-                                  : disease.confidence > 0.25
-                                  ? Colors.warning
-                                  : '#D4A017',
-                              }}
-                            >
-                              {Math.round(disease.confidence * 100)}%
-                            </Text>
-                          </View>
-                        </View>
 
-                        {/* Description if available */}
-                        {disease.description && (
-                          <Text
-                            selectable
-                            style={{
-                              fontFamily: Fonts.regular,
-                              fontSize: 13,
-                              color: Colors.textSecondary,
-                              lineHeight: 19,
-                              paddingLeft: 38,
-                            }}
-                          >
-                            {disease.description}
-                          </Text>
-                        )}
-
-                        {/* Reference images */}
-                        {disease.relatedImages && disease.relatedImages.length > 0 && (
-                          <View style={{ gap: 6 }}>
-                            <Text
-                              style={{
-                                fontFamily: Fonts.semiBold,
-                                fontSize: 11,
-                                color: Colors.textLight,
-                                textTransform: 'uppercase',
-                                letterSpacing: 0.4,
-                                paddingLeft: 38,
-                              }}
-                            >
-                              Reference Images
-                            </Text>
-                            <ScrollView
-                              horizontal
-                              showsHorizontalScrollIndicator={false}
-                              style={{ flexGrow: 0 }}
-                              contentContainerStyle={{ gap: 8, paddingLeft: 38 }}
-                            >
-                              {disease.relatedImages.map((imgUrl, imgIdx) => (
-                                <View
-                                  key={imgIdx}
+                            {/* Reference images */}
+                            {disease.relatedImages && disease.relatedImages.length > 0 && (
+                              <View style={{ gap: 6 }}>
+                                <Text
                                   style={{
-                                    width: 72,
-                                    height: 72,
-                                    borderRadius: 10,
-                                    borderCurve: 'continuous',
-                                    overflow: 'hidden',
-                                    backgroundColor: Colors.background,
-                                    borderWidth: 1,
-                                    borderColor: Colors.border,
+                                    fontFamily: Fonts.semiBold,
+                                    fontSize: 11,
+                                    color: Colors.textLight,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: 0.4,
+                                    paddingLeft: 38,
                                   }}
                                 >
-                                  <Image
-                                    source={{ uri: imgUrl }}
-                                    style={{ width: '100%', height: '100%' }}
-                                    contentFit="cover"
-                                  />
+                                  Reference Images
+                                </Text>
+                                <ScrollView
+                                  horizontal
+                                  showsHorizontalScrollIndicator={false}
+                                  style={{ flexGrow: 0 }}
+                                  contentContainerStyle={{ gap: 8, paddingLeft: 38 }}
+                                >
+                                  {disease.relatedImages.map((imgUrl, imgIdx) => (
+                                    <View
+                                      key={imgIdx}
+                                      style={{
+                                        width: 72,
+                                        height: 72,
+                                        borderRadius: 10,
+                                        borderCurve: 'continuous',
+                                        overflow: 'hidden',
+                                        backgroundColor: Colors.background,
+                                        borderWidth: 1,
+                                        borderColor: Colors.border,
+                                      }}
+                                    >
+                                      <Image
+                                        source={{ uri: imgUrl }}
+                                        style={{ width: '100%', height: '100%' }}
+                                        contentFit="cover"
+                                      />
+                                    </View>
+                                  ))}
+                                </ScrollView>
+                              </View>
+                            )}
+
+                            {/* Tap hint */}
+                            {!isExpanded && (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 38 }}>
+                                <Ionicons name="hand-left-outline" size={12} color={Colors.textLight} />
+                                <Text style={{ fontFamily: Fonts.regular, fontSize: 11, color: Colors.textLight }}>
+                                  Tap for treatment advice
+                                </Text>
+                              </View>
+                            )}
+                          </Pressable>
+
+                          {/* Expanded: Per-disease Treatment & Advice */}
+                          {isExpanded && (
+                            <Animated.View
+                              entering={FadeInDown.duration(300)}
+                              style={{
+                                marginTop: 8,
+                                backgroundColor: Colors.card,
+                                borderRadius: 14,
+                                borderCurve: 'continuous',
+                                padding: 16,
+                                gap: 12,
+                                borderWidth: 0.5,
+                                borderColor: Colors.border,
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                              }}
+                            >
+                              {/* Treatment header */}
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <Ionicons name="sparkles" size={16} color={Colors.accent} />
+                                <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Colors.textPrimary, flex: 1 }}>
+                                  Treatment & Advice
+                                </Text>
+                                {adviceLoading && <ActivityIndicator size="small" color={Colors.primary} />}
+                              </View>
+
+                              {/* Loading state */}
+                              {adviceLoading && !adviceStr && (
+                                <View style={{ paddingVertical: 12, alignItems: 'center', gap: 6 }}>
+                                  <Text style={{ fontFamily: Fonts.regular, fontSize: 12, color: Colors.textSecondary }}>
+                                    Generating expert treatment advice...
+                                  </Text>
                                 </View>
-                              ))}
-                            </ScrollView>
-                          </View>
-                        )}
-                      </Animated.View>
-                    ))}
+                              )}
+
+                              {/* Advice content */}
+                              {adviceStr && (() => {
+                                try {
+                                  const advice = JSON.parse(adviceStr);
+                                  return (
+                                    <View style={{ gap: 12 }}>
+                                      {advice.severity && (
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                          <View
+                                            style={{
+                                              paddingHorizontal: 10,
+                                              paddingVertical: 3,
+                                              borderRadius: 8,
+                                              backgroundColor: advice.severity === 'severe'
+                                                ? 'rgba(211,47,47,0.1)'
+                                                : advice.severity === 'moderate'
+                                                ? 'rgba(255,111,0,0.1)'
+                                                : 'rgba(255,193,7,0.1)',
+                                            }}
+                                          >
+                                            <Text
+                                              style={{
+                                                fontFamily: Fonts.bold,
+                                                fontSize: 10,
+                                                textTransform: 'uppercase',
+                                                color: advice.severity === 'severe'
+                                                  ? Colors.error
+                                                  : advice.severity === 'moderate'
+                                                  ? Colors.warning
+                                                  : '#D4A017',
+                                              }}
+                                            >
+                                              {advice.severity} severity
+                                            </Text>
+                                          </View>
+                                        </View>
+                                      )}
+
+                                      {advice.summary && (
+                                        <Text
+                                          selectable
+                                          style={{ fontFamily: Fonts.regular, fontSize: 13, color: Colors.textPrimary, lineHeight: 20 }}
+                                        >
+                                          {advice.summary}
+                                        </Text>
+                                      )}
+
+                                      {/* Immediate Actions */}
+                                      {advice.immediate_actions && advice.immediate_actions.length > 0 && (
+                                        <View
+                                          style={{
+                                            backgroundColor: 'rgba(211,47,47,0.05)',
+                                            borderRadius: 10,
+                                            borderCurve: 'continuous',
+                                            padding: 10,
+                                            gap: 6,
+                                          }}
+                                        >
+                                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                            <Ionicons name="flash-outline" size={13} color={Colors.error} />
+                                            <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: Colors.error }}>
+                                              Immediate Actions
+                                            </Text>
+                                          </View>
+                                          {advice.immediate_actions.map((action: string, i: number) => (
+                                            <View key={i} style={{ flexDirection: 'row', gap: 6, paddingLeft: 2 }}>
+                                              <Text style={{ fontFamily: Fonts.bold, fontSize: 11, color: Colors.error }}>•</Text>
+                                              <Text
+                                                selectable
+                                                style={{ fontFamily: Fonts.regular, fontSize: 12, color: Colors.textPrimary, lineHeight: 18, flex: 1 }}
+                                              >
+                                                {action}
+                                              </Text>
+                                            </View>
+                                          ))}
+                                        </View>
+                                      )}
+
+                                      {/* Organic Treatments */}
+                                      {advice.organic_treatments && advice.organic_treatments.length > 0 && (
+                                        <View style={{ gap: 6 }}>
+                                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                            <Ionicons name="leaf-outline" size={13} color={Colors.accent} />
+                                            <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: Colors.primary }}>
+                                              Organic Treatments
+                                            </Text>
+                                          </View>
+                                          <View
+                                            style={{
+                                              backgroundColor: 'rgba(139,195,74,0.06)',
+                                              borderRadius: 10,
+                                              borderCurve: 'continuous',
+                                              padding: 10,
+                                              gap: 5,
+                                            }}
+                                          >
+                                            {advice.organic_treatments.map((treatment: string, i: number) => (
+                                              <View key={i} style={{ flexDirection: 'row', gap: 6 }}>
+                                                <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.accent, marginTop: 6 }} />
+                                                <Text
+                                                  selectable
+                                                  style={{ fontFamily: Fonts.regular, fontSize: 12, color: Colors.textPrimary, lineHeight: 18, flex: 1 }}
+                                                >
+                                                  {treatment}
+                                                </Text>
+                                              </View>
+                                            ))}
+                                          </View>
+                                        </View>
+                                      )}
+
+                                      {/* Chemical Treatments */}
+                                      {advice.chemical_treatments && advice.chemical_treatments.length > 0 && (
+                                        <View style={{ gap: 6 }}>
+                                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                            <Ionicons name="flask-outline" size={13} color="#1976D2" />
+                                            <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: '#1976D2' }}>
+                                              Chemical Treatments
+                                            </Text>
+                                          </View>
+                                          <View
+                                            style={{
+                                              backgroundColor: 'rgba(33,150,243,0.05)',
+                                              borderRadius: 10,
+                                              borderCurve: 'continuous',
+                                              padding: 10,
+                                              gap: 5,
+                                            }}
+                                          >
+                                            {advice.chemical_treatments.map((treatment: string, i: number) => (
+                                              <View key={i} style={{ flexDirection: 'row', gap: 6 }}>
+                                                <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#1976D2', marginTop: 6 }} />
+                                                <Text
+                                                  selectable
+                                                  style={{ fontFamily: Fonts.regular, fontSize: 12, color: Colors.textPrimary, lineHeight: 18, flex: 1 }}
+                                                >
+                                                  {treatment}
+                                                </Text>
+                                              </View>
+                                            ))}
+                                          </View>
+                                        </View>
+                                      )}
+
+                                      {/* Prevention */}
+                                      {advice.prevention && advice.prevention.length > 0 && (
+                                        <View style={{ gap: 6 }}>
+                                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                            <Ionicons name="shield-checkmark-outline" size={13} color={Colors.primary} />
+                                            <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: Colors.primary }}>
+                                              Prevention
+                                            </Text>
+                                          </View>
+                                          {advice.prevention.map((tip: string, i: number) => (
+                                            <View key={i} style={{ flexDirection: 'row', gap: 6, paddingLeft: 2 }}>
+                                              <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.primary, marginTop: 6 }} />
+                                              <Text
+                                                selectable
+                                                style={{ fontFamily: Fonts.regular, fontSize: 12, color: Colors.textPrimary, lineHeight: 18, flex: 1 }}
+                                              >
+                                                {tip}
+                                              </Text>
+                                            </View>
+                                          ))}
+                                        </View>
+                                      )}
+
+                                      {/* Spread risk & Recovery */}
+                                      {(advice.spread_risk || advice.recovery_timeline) && (
+                                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                                          {advice.spread_risk && (
+                                            <View
+                                              style={{
+                                                flex: 1,
+                                                backgroundColor: 'rgba(255,111,0,0.06)',
+                                                borderRadius: 10,
+                                                borderCurve: 'continuous',
+                                                padding: 10,
+                                                gap: 3,
+                                              }}
+                                            >
+                                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                                                <Ionicons name="git-branch-outline" size={11} color={Colors.warning} />
+                                                <Text style={{ fontFamily: Fonts.semiBold, fontSize: 10, color: Colors.warning }}>
+                                                  Spread Risk
+                                                </Text>
+                                              </View>
+                                              <Text
+                                                selectable
+                                                style={{ fontFamily: Fonts.regular, fontSize: 11, color: Colors.textPrimary, lineHeight: 16 }}
+                                              >
+                                                {advice.spread_risk}
+                                              </Text>
+                                            </View>
+                                          )}
+                                          {advice.recovery_timeline && (
+                                            <View
+                                              style={{
+                                                flex: 1,
+                                                backgroundColor: 'rgba(46,125,50,0.06)',
+                                                borderRadius: 10,
+                                                borderCurve: 'continuous',
+                                                padding: 10,
+                                                gap: 3,
+                                              }}
+                                            >
+                                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                                                <Ionicons name="time-outline" size={11} color={Colors.success} />
+                                                <Text style={{ fontFamily: Fonts.semiBold, fontSize: 10, color: Colors.success }}>
+                                                  Recovery
+                                                </Text>
+                                              </View>
+                                              <Text
+                                                selectable
+                                                style={{ fontFamily: Fonts.regular, fontSize: 11, color: Colors.textPrimary, lineHeight: 16 }}
+                                              >
+                                                {advice.recovery_timeline}
+                                              </Text>
+                                            </View>
+                                          )}
+                                        </View>
+                                      )}
+                                    </View>
+                                  );
+                                } catch {
+                                  return null;
+                                }
+                              })()}
+
+                              {/* No advice fallback */}
+                              {!adviceStr && !adviceLoading && (
+                                <Text
+                                  style={{
+                                    fontFamily: Fonts.regular,
+                                    fontSize: 12,
+                                    color: Colors.textSecondary,
+                                    textAlign: 'center',
+                                    paddingVertical: 6,
+                                  }}
+                                >
+                                  Treatment advice could not be generated. Tap to retry.
+                                </Text>
+                              )}
+                            </Animated.View>
+                          )}
+                        </Animated.View>
+                      );
+                    })}
                   </Animated.View>
                 )}
 
@@ -1890,8 +2266,8 @@ Provide specific, actionable advice with real product/compound names where appli
                 )}
               </View>
 
-              {/* AI-Powered Treatment Advice Card */}
-              {diseaseData && !diseaseLoading && (
+              {/* AI-Powered Care Recommendations Card — Only for healthy plants */}
+              {diseaseData && !diseaseLoading && diseaseData.isHealthy && (
                 <Animated.View entering={FadeInDown.delay(200).duration(500)}>
                   <View
                     style={{
