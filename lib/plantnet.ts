@@ -248,9 +248,9 @@ export async function identifyPlantDisease(
     if (Platform.OS === 'web') {
       const response = await fetch(imageUri);
       const blob = await response.blob();
-      formData.append('image', blob, 'plant_disease.jpg');
+      formData.append('images', blob, 'plant_disease.jpg');
     } else {
-      formData.append('image', {
+      formData.append('images', {
         uri: imageUri,
         type: 'image/jpeg',
         name: 'plant_disease.jpg',
