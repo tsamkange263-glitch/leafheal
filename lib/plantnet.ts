@@ -49,18 +49,23 @@ export interface DiseaseIdentificationResponse {
 const MINIMUM_CONFIDENCE = 0.05;
 
 /**
- * Identifies a plant from an image URI.
+ * Identifies a plant from one or more image URIs with associated organ types.
+ * Supports multi-image identification for higher accuracy.
  * Uses React Native's FormData with { uri, type, name } objects on native,
  * and Blob-based approach on web.
  */
 export async function identifyPlantWithPlantNet(
-  imageUri: string
+  imageUriOrUris: string | string[],
+  organs?: string[]
 ): Promise<
   | { success: true; data: PlantNetResult; topResults: PlantNetResult[] }
   | { success: false; error: PlantNetError }
 > {
   try {
-    if (!imageUri) {
+    const imageUris = Array.isArray(imageUriOrUris) ? imageUriOrUris : [imageUriOrUris];
+    const organTypes = organs || imageUris.map(() => 'auto');
+
+    if (imageUris.length === 0 || !imageUris[0]) {
       return {
         success: false,
         error: { type: 'api_error', message: 'No image provided for identification.' },
@@ -69,22 +74,26 @@ export async function identifyPlantWithPlantNet(
 
     const formData = new FormData();
 
-    if (Platform.OS === 'web') {
-      // On web, fetch the image as a blob and append it
-      const response = await fetch(imageUri);
-      const blob = await response.blob();
-      formData.append('images', blob, 'plant.jpg');
-    } else {
-      // On native (iOS/Android), use the { uri, type, name } format
-      // This is the standard React Native way to handle file uploads
-      formData.append('images', {
-        uri: imageUri,
-        type: 'image/jpeg',
-        name: 'plant.jpg',
-      } as any);
-    }
+    for (let i = 0; i < imageUris.length; i++) {
+      const uri = imageUris[i];
+      const organ = organTypes[i] || 'auto';
 
-    formData.append('organs', 'auto');
+      if (Platform.OS === 'web') {
+        // On web, fetch the image as a blob and append it
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        formData.append('images', blob, `plant_${i}.jpg`);
+      } else {
+        // On native (iOS/Android), use the { uri, type, name } format
+        formData.append('images', {
+          uri: uri,
+          type: 'image/jpeg',
+          name: `plant_${i}.jpg`,
+        } as any);
+      }
+
+      formData.append('organs', organ);
+    }
 
     const response = await fetch(
       `${PLANT_ID_URL}&include-related-images=true&no-reject=false&nb-results=5&lang=en`,
@@ -226,17 +235,20 @@ export async function identifyPlantWithPlantNet(
 // ============================================================
 
 /**
- * Identifies plant diseases from an image URI.
+ * Identifies plant diseases from one or more image URIs.
  * Should be called AFTER plant identification succeeds (sequentially).
+ * Supports multiple images for better disease detection accuracy.
  */
 export async function identifyPlantDisease(
-  imageUri: string
+  imageUriOrUris: string | string[]
 ): Promise<
   | { success: true; data: DiseaseIdentificationResponse }
   | { success: false; error: PlantNetError }
 > {
   try {
-    if (!imageUri) {
+    const imageUris = Array.isArray(imageUriOrUris) ? imageUriOrUris : [imageUriOrUris];
+
+    if (imageUris.length === 0 || !imageUris[0]) {
       return {
         success: false,
         error: { type: 'api_error', message: 'No image provided for disease identification.' },
@@ -245,16 +257,19 @@ export async function identifyPlantDisease(
 
     const formData = new FormData();
 
-    if (Platform.OS === 'web') {
-      const response = await fetch(imageUri);
-      const blob = await response.blob();
-      formData.append('images', blob, 'plant_disease.jpg');
-    } else {
-      formData.append('images', {
-        uri: imageUri,
-        type: 'image/jpeg',
-        name: 'plant_disease.jpg',
-      } as any);
+    for (let i = 0; i < imageUris.length; i++) {
+      const uri = imageUris[i];
+      if (Platform.OS === 'web') {
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        formData.append('images', blob, `plant_disease_${i}.jpg`);
+      } else {
+        formData.append('images', {
+          uri: uri,
+          type: 'image/jpeg',
+          name: `plant_disease_${i}.jpg`,
+        } as any);
+      }
     }
 
     const response = await fetch(DISEASE_ID_URL, {
