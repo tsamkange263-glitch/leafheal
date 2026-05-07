@@ -19,7 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { CreditBadge } from '@/components/credit-badge';
 import { getHerbalReferenceContext, shouldRefreshCache, refreshHerbalReferenceCache } from '@/lib/herbal-reference';
-import { identifyPlantWithPlantNet } from '@/lib/plantnet';
+import { identifyPlantWithPlantNet, identifyPlantDisease } from '@/lib/plantnet';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 
 const SHOW_CANCEL_AFTER_MS = 10000; // Show cancel/retry after 10 seconds
@@ -149,9 +149,12 @@ export default function ScanScreen() {
 
     try {
       // ============================================================
-      // STAGE 1: Plant identification via PlantNet API
+      // STAGE 1: Plant identification + Disease identification (parallel)
       // ============================================================
-      const plantNetResult = await identifyPlantWithPlantNet(selectedImage);
+      const [plantNetResult, diseaseResult] = await Promise.all([
+        identifyPlantWithPlantNet(selectedImage),
+        identifyPlantDisease(selectedImage),
+      ]);
 
       if (cancelledRef.current) return;
 
@@ -214,7 +217,7 @@ export default function ScanScreen() {
         .eq('id', user.id);
       updateCredits(newCredits);
 
-      // Navigate to result screen with identification data (no AI enrichment yet)
+      // Navigate to result screen with identification + disease data
       if (!cancelledRef.current) {
         router.replace({
           pathname: '/result',
@@ -222,6 +225,12 @@ export default function ScanScreen() {
             imageUrl: imageUrl || selectedImage,
             localImageUri: selectedImage,
             topResults: JSON.stringify(topResults),
+            diseaseResults: diseaseResult.success
+              ? JSON.stringify(diseaseResult.data)
+              : JSON.stringify(null),
+            diseaseError: !diseaseResult.success
+              ? diseaseResult.error.message
+              : '',
           },
         });
       }
