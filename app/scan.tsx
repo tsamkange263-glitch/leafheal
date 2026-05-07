@@ -152,10 +152,17 @@ export default function ScanScreen() {
     try {
       // ============================================================
       // STAGE 1: Plant identification + Disease identification (parallel)
+      // Disease call is wrapped to never reject — it returns a safe error result on failure
       // ============================================================
       const [plantNetResult, diseaseResult] = await Promise.all([
         identifyPlantWithPlantNet(selectedImage),
-        identifyPlantDisease(selectedImage),
+        identifyPlantDisease(selectedImage).catch((err): { success: false; error: { type: 'api_error'; message: string } } => {
+          console.error('Disease identification unexpected error:', err);
+          return {
+            success: false,
+            error: { type: 'api_error', message: 'Disease identification failed unexpectedly. You can retry from the Plant Health tab.' },
+          };
+        }),
       ]);
 
       if (cancelledRef.current) return;
@@ -258,9 +265,12 @@ export default function ScanScreen() {
 
       if (cancelledRef.current) return;
 
+      const isTimeout = e?.message?.includes('timed out') || e?.message?.includes('timeout') || e?.name === 'AbortError';
       Alert.alert(
-        'Analysis Failed',
-        'An unexpected error occurred. Please try again with a clearer photo.',
+        isTimeout ? 'Request Timed Out' : 'Analysis Failed',
+        isTimeout
+          ? 'The request took too long. Please check your internet connection and try again.'
+          : 'An unexpected error occurred. Please try again with a clearer photo.',
         [{ text: 'OK' }]
       );
       setStep('preview');

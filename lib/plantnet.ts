@@ -52,7 +52,7 @@ interface PlantNetAPIResponse {
 }
 
 const MINIMUM_CONFIDENCE = 0.05; // 5% minimum confidence threshold
-const REQUEST_TIMEOUT_MS = 25000; // 25 second timeout
+const REQUEST_TIMEOUT_MS = 45000; // 45 second timeout for slow network/large image uploads
 
 /**
  * Converts a local image URI to a proper Blob for multipart form-data upload.
@@ -311,7 +311,7 @@ export async function identifyPlantWithPlantNet(
 
 const PLANTNET_DISEASE_API_URL = 'https://my-api.plantnet.org/v2/diseases/identify';
 const PLANTNET_DISEASE_API_KEY = '2b10FwLN1xs3J5l1EAgj8PKY3O';
-const DISEASE_REQUEST_TIMEOUT_MS = 30000;
+const DISEASE_REQUEST_TIMEOUT_MS = 45000; // 45 seconds for disease identification
 
 export interface DiseaseResult {
   name: string;

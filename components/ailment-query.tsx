@@ -14,7 +14,7 @@ import { Fonts } from '@/constants/Typography';
 import { getTargetedPlantReference } from '@/lib/herbal-reference';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
-const AILMENT_QUERY_TIMEOUT_MS = 30000; // 30 seconds
+const AILMENT_QUERY_TIMEOUT_MS = 60000; // 60 seconds for AI text generation
 
 interface AilmentResponse {
   id: string;
@@ -86,15 +86,31 @@ export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
     };
   }, []);
 
-  // Helper: wrap a promise with timeout
+  // Helper: wrap a promise with timeout that properly handles cleanup
   function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
     return new Promise((resolve, reject) => {
+      let settled = false;
       const timer = setTimeout(() => {
-        reject(new Error(`Request timed out after ${ms / 1000} seconds`));
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Request timed out after ${ms / 1000} seconds`));
+        }
       }, ms);
       promise
-        .then((result) => { clearTimeout(timer); resolve(result); })
-        .catch((err) => { clearTimeout(timer); reject(err); });
+        .then((result) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve(result);
+          }
+        })
+        .catch((err) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            reject(err);
+          }
+        });
     });
   }
 

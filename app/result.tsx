@@ -28,17 +28,33 @@ import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
 type TabKey = 'overview' | 'remedies' | 'precautions' | 'plant_health';
 
-const REMEDY_TIMEOUT_MS = 30000;
+const REMEDY_TIMEOUT_MS = 60000; // 60 seconds for AI text generation (LLM calls can be slow)
 
-// Helper: wrap a promise with a timeout
+// Helper: wrap a promise with a timeout that properly handles cleanup
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
+    let settled = false;
     const timer = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${ms / 1000} seconds`));
+      if (!settled) {
+        settled = true;
+        reject(new Error(`${label} timed out after ${ms / 1000} seconds`));
+      }
     }, ms);
     promise
-      .then((result) => { clearTimeout(timer); resolve(result); })
-      .catch((err) => { clearTimeout(timer); reject(err); });
+      .then((result) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(result);
+        }
+      })
+      .catch((err) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
   });
 }
 
@@ -131,16 +147,21 @@ export default function ResultScreen() {
   // Check if archived
   useEffect(() => {
     if (!scanId || !user?.id) return;
-    supabase
-      .from('archived_remedies')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('scan_id', scanId)
-      .then(({ data }) => {
+    const checkArchive = async () => {
+      try {
+        const { data } = await supabase
+          .from('archived_remedies')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('scan_id', scanId);
         if (data && data.length > 0) {
           addArchivedId(scanId);
         }
-      });
+      } catch (err) {
+        console.error('Failed to check archive status:', err);
+      }
+    };
+    checkArchive();
   }, [scanId, user?.id]);
 
   // Handle plant option selection — generate AI content for the chosen plant
@@ -313,7 +334,10 @@ Provide rich, specific, actionable information. Only return the JSON.`;
         if (parsed) {
           diseaseApiCalled.current = true;
           setDiseaseData(parsed);
-          generateDiseaseAdvice(parsed, cacheKey);
+          generateDiseaseAdvice(parsed, cacheKey).catch((err) => {
+            console.error('Disease advice generation failed:', err);
+            setDiseaseAdviceLoading(false);
+          });
           return;
         }
       } catch {
@@ -332,7 +356,11 @@ Provide rich, specific, actionable information. Only return the JSON.`;
     const imageUrl = params.localImageUri || userImageUrl || scan.image_url;
     if (!imageUrl) return;
 
-    fetchDiseaseIdentification(imageUrl, cacheKey);
+    fetchDiseaseIdentification(imageUrl, cacheKey).catch((err) => {
+      console.error('Unexpected disease identification failure:', err);
+      setDiseaseError('Disease identification failed unexpectedly. Please try again.');
+      setDiseaseLoading(false);
+    });
   }, [scan, mode]);
 
   const fetchDiseaseIdentification = async (imageUrl: string, cacheKey: string) => {
@@ -354,11 +382,17 @@ Provide rich, specific, actionable information. Only return the JSON.`;
       setDiseaseData(result.data);
       setDiseaseLoading(false);
 
-      // Generate AI advice based on disease results
-      await generateDiseaseAdvice(result.data, cacheKey);
+      // Generate AI advice based on disease results (fire and handle errors internally)
+      generateDiseaseAdvice(result.data, cacheKey).catch((adviceErr) => {
+        console.error('Disease advice generation failed:', adviceErr);
+        setDiseaseAdviceLoading(false);
+      });
     } catch (e: any) {
       console.error('Disease identification error:', e);
-      setDiseaseError('Failed to identify diseases. Please try again.');
+      const errorMsg = e?.message?.includes('timed out') || e?.message?.includes('timeout')
+        ? 'Disease identification timed out. Your connection may be slow — please try again.'
+        : 'Failed to identify diseases. Please try again.';
+      setDiseaseError(errorMsg);
       setDiseaseLoading(false);
     }
   };
