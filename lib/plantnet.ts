@@ -248,19 +248,43 @@ export interface DiseaseIdentificationResponse {
   isHealthy: boolean;
 }
 
+export interface DiseaseDebugInfo {
+  requestUrl: string;
+  imageUri: string;
+  imageMimeType: string;
+  imageFileName: string;
+  statusCode: number | null;
+  responseBody: string;
+  error: string | null;
+  timestamp: string;
+}
+
 /**
  * Identifies plant diseases from a leaf image using the PlantNet Disease API.
  * Returns detected diseases ranked by confidence, with related reference images.
+ * Also returns debug info for troubleshooting API issues.
  */
 export async function identifyPlantDisease(
   imageUri: string
-): Promise<{ success: true; data: DiseaseIdentificationResponse } | { success: false; error: PlantNetError }> {
+): Promise<{ success: true; data: DiseaseIdentificationResponse; debug: DiseaseDebugInfo } | { success: false; error: PlantNetError; debug: DiseaseDebugInfo }> {
+  const fileName = imageUri.split('/').pop() || 'leaf.jpg';
+  const fileExtension = fileName.split('.').pop()?.toLowerCase() || 'jpg';
+  const mimeType = fileExtension === 'png' ? 'image/png' : 'image/jpeg';
+  const requestUrl = `${PLANTNET_DISEASE_API_URL}?include-related-images=true&api-key=${PLANTNET_DISEASE_API_KEY}`;
+
+  const debug: DiseaseDebugInfo = {
+    requestUrl,
+    imageUri,
+    imageMimeType: mimeType,
+    imageFileName: fileName,
+    statusCode: null,
+    responseBody: '',
+    error: null,
+    timestamp: new Date().toISOString(),
+  };
+
   try {
     const formData = new FormData();
-
-    const fileName = imageUri.split('/').pop() || 'leaf.jpg';
-    const fileExtension = fileName.split('.').pop()?.toLowerCase() || 'jpg';
-    const mimeType = fileExtension === 'png' ? 'image/png' : 'image/jpeg';
 
     // Note: Disease endpoint uses "image" (singular), not "images"
     formData.append('image', {
@@ -269,22 +293,31 @@ export async function identifyPlantDisease(
       type: mimeType,
     } as any);
 
+    console.log('[PlantNet Disease Debug] Request URL:', requestUrl);
+    console.log('[PlantNet Disease Debug] Image URI:', imageUri);
+    console.log('[PlantNet Disease Debug] Image MIME:', mimeType);
+    console.log('[PlantNet Disease Debug] File name:', fileName);
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), DISEASE_REQUEST_TIMEOUT_MS);
 
-    const response = await fetch(
-      `${PLANTNET_DISEASE_API_URL}?include-related-images=true&api-key=${PLANTNET_DISEASE_API_KEY}`,
-      {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Accept': 'application/json',
-        },
-        signal: controller.signal,
-      }
-    );
+    const response = await fetch(requestUrl, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Accept': 'application/json',
+      },
+      signal: controller.signal,
+    });
 
     clearTimeout(timeoutId);
+
+    debug.statusCode = response.status;
+    const responseText = await response.text();
+    debug.responseBody = responseText;
+
+    console.log('[PlantNet Disease Debug] Status Code:', response.status);
+    console.log('[PlantNet Disease Debug] Response Body (first 2000 chars):', responseText.substring(0, 2000));
 
     if (!response.ok) {
       const statusCode = response.status;
@@ -296,6 +329,7 @@ export async function identifyPlantDisease(
             diseases: [],
             isHealthy: true,
           },
+          debug,
         };
       }
 
@@ -306,6 +340,7 @@ export async function identifyPlantDisease(
             type: 'api_error',
             message: 'Too many requests. Please wait a moment and try again.',
           },
+          debug,
         };
       }
 
@@ -316,6 +351,7 @@ export async function identifyPlantDisease(
             type: 'api_error',
             message: 'Disease identification service is temporarily unavailable. Please try again later.',
           },
+          debug,
         };
       }
 
@@ -325,10 +361,26 @@ export async function identifyPlantDisease(
           type: 'api_error',
           message: `Disease identification failed (error ${statusCode}). Please try again.`,
         },
+        debug,
       };
     }
 
-    const data = await response.json();
+    // Parse the response text as JSON
+    let data: any;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError: any) {
+      debug.error = `JSON parse error: ${parseError.message}`;
+      console.error('[PlantNet Disease Debug] JSON parse error:', parseError.message);
+      return {
+        success: false,
+        error: {
+          type: 'api_error',
+          message: `Failed to parse API response as JSON: ${parseError.message}`,
+        },
+        debug,
+      };
+    }
 
     // Parse the API response — handle various response formats
     const diseases: DiseaseResult[] = [];
@@ -364,14 +416,21 @@ export async function identifyPlantDisease(
 
     const isHealthy = diseases.length === 0 || (diseases[0]?.name?.toLowerCase().includes('healthy'));
 
+    console.log('[PlantNet Disease Debug] Parsed diseases count:', diseases.length);
+    console.log('[PlantNet Disease Debug] Is healthy:', isHealthy);
+
     return {
       success: true,
       data: {
         diseases,
         isHealthy,
       },
+      debug,
     };
   } catch (error: any) {
+    debug.error = `${error?.name || 'Error'}: ${error?.message || 'Unknown error'}`;
+    console.error('[PlantNet Disease Debug] Exception:', debug.error);
+
     if (error?.name === 'AbortError') {
       return {
         success: false,
@@ -379,6 +438,7 @@ export async function identifyPlantDisease(
           type: 'timeout',
           message: 'Disease identification timed out. Please check your connection and try again.',
         },
+        debug,
       };
     }
 
@@ -389,6 +449,7 @@ export async function identifyPlantDisease(
           type: 'network_error',
           message: 'Network error. Please check your internet connection and try again.',
         },
+        debug,
       };
     }
 
@@ -398,6 +459,7 @@ export async function identifyPlantDisease(
         type: 'api_error',
         message: 'An unexpected error occurred during disease identification. Please try again.',
       },
+      debug,
     };
   }
 }

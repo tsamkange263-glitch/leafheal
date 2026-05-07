@@ -23,7 +23,7 @@ import { AilmentQuery } from '@/components/ailment-query';
 import { getTargetedPlantReference } from '@/lib/herbal-reference';
 import { identifyPlantDisease } from '@/lib/plantnet';
 import type { Tables, RemedyData } from '@/lib/types';
-import type { PlantNetResult, DiseaseIdentificationResponse } from '@/lib/plantnet';
+import type { PlantNetResult, DiseaseIdentificationResponse, DiseaseDebugInfo } from '@/lib/plantnet';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
 type TabKey = 'overview' | 'remedies' | 'precautions' | 'plant_health';
@@ -80,6 +80,7 @@ export default function ResultScreen() {
   const [diseaseData, setDiseaseData] = useState<DiseaseIdentificationResponse | null>(null);
   const [diseaseAdvice, setDiseaseAdvice] = useState<string | null>(null);
   const [diseaseAdviceLoading, setDiseaseAdviceLoading] = useState(false);
+  const [diseaseDebugInfo, setDiseaseDebugInfo] = useState<DiseaseDebugInfo | null>(null);
   const diseaseCache = useRef<{ [key: string]: { data: DiseaseIdentificationResponse; advice: string | null } }>({});
   const diseaseApiCalled = useRef(false);
 
@@ -314,9 +315,14 @@ Provide rich, specific, actionable information. Only return the JSON.`;
     setDiseaseError(null);
     setDiseaseData(null);
     setDiseaseAdvice(null);
+    setDiseaseDebugInfo(null);
 
     try {
       const result = await identifyPlantDisease(imageUrl);
+
+      // Always capture debug info
+      setDiseaseDebugInfo(result.debug);
+      console.log('[Disease Debug] Full debug info:', JSON.stringify(result.debug, null, 2));
 
       if (!result.success) {
         setDiseaseError(result.error.message);
@@ -331,6 +337,16 @@ Provide rich, specific, actionable information. Only return the JSON.`;
       await generateDiseaseAdvice(result.data, cacheKey);
     } catch (e: any) {
       console.error('Disease identification error:', e);
+      setDiseaseDebugInfo({
+        requestUrl: 'N/A (exception before request)',
+        imageUri: imageUrl,
+        imageMimeType: 'N/A',
+        imageFileName: imageUrl.split('/').pop() || 'unknown',
+        statusCode: null,
+        responseBody: '',
+        error: `Exception: ${e?.message || 'Unknown error'}`,
+        timestamp: new Date().toISOString(),
+      });
       setDiseaseError('Failed to identify diseases. Please try again.');
       setDiseaseLoading(false);
     }
@@ -2201,6 +2217,191 @@ Provide specific, actionable advice with real product/compound names where appli
                   This AI-powered diagnosis is for guidance only. For critical crop decisions, confirm with laboratory testing or consult a certified agronomist.
                 </Text>
               </View>
+
+              {/* DEBUG PANEL - API Response Inspector */}
+              {diseaseDebugInfo && (
+                <View
+                  style={{
+                    backgroundColor: '#1a1a2e',
+                    borderRadius: 14,
+                    borderCurve: 'continuous',
+                    padding: 16,
+                    gap: 12,
+                    borderWidth: 1,
+                    borderColor: '#e94560',
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="bug" size={18} color="#e94560" />
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: '#e94560' }}>
+                      🐛 API Debug Panel
+                    </Text>
+                  </View>
+
+                  {/* Timestamp */}
+                  <Text style={{ fontFamily: Fonts.regular, fontSize: 11, color: '#8892b0' }}>
+                    Timestamp: {diseaseDebugInfo.timestamp}
+                  </Text>
+
+                  {/* Request URL */}
+                  <View style={{ gap: 4 }}>
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: '#64ffda' }}>
+                      Request URL:
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      style={{ flexGrow: 0 }}
+                      showsHorizontalScrollIndicator
+                    >
+                      <Text
+                        selectable
+                        style={{
+                          fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                          fontSize: 10,
+                          color: '#ccd6f6',
+                          backgroundColor: '#0a192f',
+                          padding: 8,
+                          borderRadius: 6,
+                        }}
+                      >
+                        {diseaseDebugInfo.requestUrl}
+                      </Text>
+                    </ScrollView>
+                  </View>
+
+                  {/* Image Info */}
+                  <View style={{ gap: 4 }}>
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: '#64ffda' }}>
+                      Image Sent:
+                    </Text>
+                    <Text
+                      selectable
+                      style={{
+                        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                        fontSize: 10,
+                        color: '#ccd6f6',
+                        backgroundColor: '#0a192f',
+                        padding: 8,
+                        borderRadius: 6,
+                      }}
+                    >
+                      {`URI: ${diseaseDebugInfo.imageUri}\nFile: ${diseaseDebugInfo.imageFileName}\nMIME: ${diseaseDebugInfo.imageMimeType}`}
+                    </Text>
+                  </View>
+
+                  {/* Status Code */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: '#64ffda' }}>
+                      Status Code:
+                    </Text>
+                    <View
+                      style={{
+                        backgroundColor: diseaseDebugInfo.statusCode && diseaseDebugInfo.statusCode >= 200 && diseaseDebugInfo.statusCode < 300
+                          ? 'rgba(100, 255, 218, 0.15)'
+                          : 'rgba(233, 69, 96, 0.15)',
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderRadius: 6,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: Fonts.bold,
+                          fontSize: 13,
+                          color: diseaseDebugInfo.statusCode && diseaseDebugInfo.statusCode >= 200 && diseaseDebugInfo.statusCode < 300
+                            ? '#64ffda'
+                            : '#e94560',
+                        }}
+                      >
+                        {diseaseDebugInfo.statusCode ?? 'N/A (no response)'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Error (if any) */}
+                  {diseaseDebugInfo.error && (
+                    <View style={{ gap: 4 }}>
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: '#e94560' }}>
+                        ⚠️ Error/Exception:
+                      </Text>
+                      <Text
+                        selectable
+                        style={{
+                          fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                          fontSize: 10,
+                          color: '#ff6b6b',
+                          backgroundColor: '#0a192f',
+                          padding: 8,
+                          borderRadius: 6,
+                        }}
+                      >
+                        {diseaseDebugInfo.error}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Raw Response Body */}
+                  <View style={{ gap: 4 }}>
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: '#64ffda' }}>
+                      Raw Response Body:
+                    </Text>
+                    <ScrollView
+                      style={{
+                        maxHeight: 300,
+                        flexGrow: 0,
+                        backgroundColor: '#0a192f',
+                        borderRadius: 6,
+                      }}
+                      nestedScrollEnabled
+                    >
+                      <Text
+                        selectable
+                        style={{
+                          fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                          fontSize: 10,
+                          color: '#ccd6f6',
+                          padding: 10,
+                          lineHeight: 16,
+                        }}
+                      >
+                        {diseaseDebugInfo.responseBody
+                          ? diseaseDebugInfo.responseBody.substring(0, 5000)
+                          : '(empty response)'}
+                      </Text>
+                    </ScrollView>
+                    {diseaseDebugInfo.responseBody && diseaseDebugInfo.responseBody.length > 5000 && (
+                      <Text style={{ fontFamily: Fonts.regular, fontSize: 10, color: '#8892b0', fontStyle: 'italic' }}>
+                        ... truncated ({diseaseDebugInfo.responseBody.length} total chars, showing first 5000)
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* Debug panel loading state */}
+              {diseaseLoading && !diseaseDebugInfo && (
+                <View
+                  style={{
+                    backgroundColor: '#1a1a2e',
+                    borderRadius: 14,
+                    borderCurve: 'continuous',
+                    padding: 16,
+                    gap: 8,
+                    borderWidth: 1,
+                    borderColor: '#333',
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="bug" size={18} color="#8892b0" />
+                    <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: '#8892b0' }}>
+                      🐛 API Debug Panel
+                    </Text>
+                  </View>
+                  <Text style={{ fontFamily: Fonts.regular, fontSize: 12, color: '#8892b0' }}>
+                    Waiting for API response...
+                  </Text>
+                </View>
+              )}
             </View>
           )}
         </Animated.View>
