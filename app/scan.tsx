@@ -151,19 +151,11 @@ export default function ScanScreen() {
 
     try {
       // ============================================================
-      // STAGE 1: Plant identification + Disease identification (parallel)
-      // Disease call is wrapped to never reject — it returns a safe error result on failure
+      // STAGE 1: Plant identification ONLY (primary — must succeed)
+      // Disease identification runs AFTER to avoid resource contention
+      // on real devices (parallel file reads can fail on Android/iOS)
       // ============================================================
-      const [plantNetResult, diseaseResult] = await Promise.all([
-        identifyPlantWithPlantNet(selectedImage),
-        identifyPlantDisease(selectedImage).catch((err): { success: false; error: { type: 'api_error'; message: string } } => {
-          console.error('Disease identification unexpected error:', err);
-          return {
-            success: false,
-            error: { type: 'api_error', message: 'Disease identification failed unexpectedly. You can retry from the Plant Health tab.' },
-          };
-        }),
-      ]);
+      const plantNetResult = await identifyPlantWithPlantNet(selectedImage);
 
       if (cancelledRef.current) return;
 
@@ -186,11 +178,25 @@ export default function ScanScreen() {
       if (cancelledRef.current) return;
 
       // ============================================================
-      // STAGE 2: Upload image to storage
+      // STAGE 2: Upload image to storage + disease identification (parallel)
+      // Disease is secondary — we fire it here after plant ID succeeds.
+      // Both use separate file reads so they don't contend.
       // ============================================================
       setAnalysisStage('saving');
-      setStageMessage('Saving your image...');
+      setStageMessage('Saving results & checking plant health...');
       setShowCancel(false);
+
+      // Fire disease identification in parallel with image upload — it's non-blocking
+      // and has its own independent image read. If it fails, user can retry from Plant Health tab.
+      const diseasePromise = identifyPlantDisease(selectedImage).catch(
+        (err): { success: false; error: { type: 'api_error'; message: string } } => {
+          console.error('Disease identification error:', err);
+          return {
+            success: false,
+            error: { type: 'api_error', message: 'Disease check failed. You can retry from the Plant Health tab.' },
+          };
+        }
+      );
 
       // Upload image to Supabase Storage
       // Uses expo-file-system on native to avoid fetch(file://) issues in production APK
@@ -233,6 +239,9 @@ export default function ScanScreen() {
       }
 
       if (cancelledRef.current) return;
+
+      // Await disease result (it's been running in parallel with upload)
+      const diseaseResult = await diseasePromise;
 
       // Deduct credit
       const newCredits = Math.max(0, credits - 1);
