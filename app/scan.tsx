@@ -12,7 +12,6 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { File as ExpoFile } from 'expo-file-system';
 import { useAuth } from '@fastshot/auth';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
@@ -24,9 +23,9 @@ import { getHerbalReferenceContext, shouldRefreshCache, refreshHerbalReferenceCa
 import { identifyPlantWithPlantNet, identifyPlantDisease } from '@/lib/plantnet';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 
-const SHOW_CANCEL_AFTER_MS = 10000; // Show cancel/retry after 10 seconds
+const SHOW_CANCEL_AFTER_MS = 15000; // Show cancel/retry after 15 seconds
 
-type AnalysisStage = 'identifying' | 'saving';
+type AnalysisStage = 'identifying' | 'disease_check' | 'saving';
 
 export default function ScanScreen() {
   const router = useRouter();
@@ -42,6 +41,7 @@ export default function ScanScreen() {
 
   const cancelledRef = useRef(false);
   const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const processedRef = useRef(false);
 
   const credits = profile?.scan_credits ?? 0;
 
@@ -53,7 +53,6 @@ export default function ScanScreen() {
         if (needsRefresh) {
           await refreshHerbalReferenceCache();
         }
-        // Just ensure cache is warm — we won't use full context in identification
         await getHerbalReferenceContext();
       } catch {
         // Gracefully degrade
@@ -62,7 +61,6 @@ export default function ScanScreen() {
     loadHerbalContext();
   }, []);
 
-  // Start cancel timer when analysis begins
   const startCancelTimer = useCallback(() => {
     setShowCancel(false);
     cancelTimerRef.current = setTimeout(() => {
@@ -137,7 +135,6 @@ export default function ScanScreen() {
     }
   };
 
-
   const handleAnalyze = async () => {
     if (!selectedImage || !user?.id) return;
 
@@ -151,17 +148,15 @@ export default function ScanScreen() {
 
     try {
       // ============================================================
-      // STAGE 1: Plant identification ONLY (primary — must succeed)
-      // Disease identification runs AFTER to avoid resource contention
-      // on real devices (parallel file reads can fail on Android/iOS)
+      // STAGE 1: Plant identification (MUST succeed before continuing)
       // ============================================================
-      const plantNetResult = await identifyPlantWithPlantNet(selectedImage);
+      const plantResult = await identifyPlantWithPlantNet(selectedImage);
 
       if (cancelledRef.current) return;
 
-      if (!plantNetResult.success) {
+      if (!plantResult.success) {
         clearCancelTimer();
-        const error = plantNetResult.error;
+        const error = plantResult.error;
         Alert.alert(
           error.type === 'timeout' ? 'Identification Timed Out' : 'Identification Failed',
           error.message,
@@ -172,76 +167,81 @@ export default function ScanScreen() {
         return;
       }
 
-      const { topResults } = plantNetResult;
+      const { topResults } = plantResult;
       clearCancelTimer();
 
       if (cancelledRef.current) return;
 
       // ============================================================
-      // STAGE 2: Upload image to storage + disease identification (parallel)
-      // Disease is secondary — we fire it here after plant ID succeeds.
-      // Both use separate file reads so they don't contend.
+      // STAGE 2: Disease identification (sequential — after plant ID)
+      // If this fails, we still proceed with plant results.
       // ============================================================
-      setAnalysisStage('saving');
-      setStageMessage('Saving results & checking plant health...');
+      setAnalysisStage('disease_check');
+      setStageMessage('Checking plant health...');
       setShowCancel(false);
+      startCancelTimer();
 
-      // Fire disease identification in parallel with image upload — it's non-blocking
-      // and has its own independent image read. If it fails, user can retry from Plant Health tab.
-      const diseasePromise = identifyPlantDisease(selectedImage).catch(
-        (err): { success: false; error: { type: 'api_error'; message: string } } => {
-          console.error('Disease identification error:', err);
-          return {
-            success: false,
-            error: { type: 'api_error', message: 'Disease check failed. You can retry from the Plant Health tab.' },
-          };
-        }
-      );
+      let diseaseResultData: any = null;
+      let diseaseErrorMsg = '';
 
-      // Upload image to Supabase Storage
-      // Uses expo-file-system on native to avoid fetch(file://) issues in production APK
-      let imageUrl = '';
       try {
-        const fileName = `${user.id}/${Date.now()}.jpg`;
-        let blob: Blob;
+        const diseaseResult = await identifyPlantDisease(selectedImage);
 
-        if (Platform.OS === 'web') {
-          const response = await fetch(selectedImage);
-          blob = await response.blob();
+        if (cancelledRef.current) return;
+
+        if (diseaseResult.success) {
+          diseaseResultData = diseaseResult.data;
         } else {
-          // Read file as base64 using expo-file-system (reliable in production builds)
-          const file = new ExpoFile(selectedImage);
-          const base64Data = await file.base64();
-          const byteCharacters = atob(base64Data);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          blob = new Blob([byteArray], { type: 'image/jpeg' });
+          diseaseErrorMsg = diseaseResult.error.message;
         }
-
-        const { error: uploadErr } = await supabase.storage
-          .from('scan-images')
-          .upload(fileName, blob, {
-            contentType: 'image/jpeg',
-            upsert: true,
-          });
-
-        if (!uploadErr) {
-          const { data: urlData } = supabase.storage
-            .from('scan-images')
-            .getPublicUrl(fileName);
-          imageUrl = urlData.publicUrl;
-        }
-      } catch (uploadE) {
-        console.error('Upload error:', uploadE);
+      } catch (diseaseErr: any) {
+        console.error('Disease identification error (non-blocking):', diseaseErr);
+        diseaseErrorMsg = 'Disease check failed. You can retry from the Plant Health tab.';
       }
 
       if (cancelledRef.current) return;
+      clearCancelTimer();
 
-      // Await disease result (it's been running in parallel with upload)
-      const diseaseResult = await diseasePromise;
+      // ============================================================
+      // STAGE 3: Upload image to Supabase Storage + deduct credit
+      // ============================================================
+      setAnalysisStage('saving');
+      setStageMessage('Saving results...');
+      setShowCancel(false);
+
+      let imageUrl = '';
+      try {
+        const fileName = `${user.id}/${Date.now()}.jpg`;
+
+        if (Platform.OS === 'web') {
+          const response = await fetch(selectedImage);
+          const blob = await response.blob();
+          const { error: uploadErr } = await supabase.storage
+            .from('scan-images')
+            .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+
+          if (!uploadErr) {
+            const { data: urlData } = supabase.storage.from('scan-images').getPublicUrl(fileName);
+            imageUrl = urlData.publicUrl;
+          }
+        } else {
+          // On native, use fetch to read the file as a blob for Supabase upload
+          const fileResponse = await fetch(selectedImage);
+          const blob = await fileResponse.blob();
+          const { error: uploadErr } = await supabase.storage
+            .from('scan-images')
+            .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+
+          if (!uploadErr) {
+            const { data: urlData } = supabase.storage.from('scan-images').getPublicUrl(fileName);
+            imageUrl = urlData.publicUrl;
+          }
+        }
+      } catch (uploadE) {
+        console.error('Upload error (non-blocking):', uploadE);
+      }
+
+      if (cancelledRef.current) return;
 
       // Deduct credit
       const newCredits = Math.max(0, credits - 1);
@@ -259,12 +259,10 @@ export default function ScanScreen() {
             imageUrl: imageUrl || selectedImage,
             localImageUri: selectedImage,
             topResults: JSON.stringify(topResults),
-            diseaseResults: diseaseResult.success
-              ? JSON.stringify(diseaseResult.data)
+            diseaseResults: diseaseResultData
+              ? JSON.stringify(diseaseResultData)
               : JSON.stringify(null),
-            diseaseError: !diseaseResult.success
-              ? diseaseResult.error.message
-              : '',
+            diseaseError: diseaseErrorMsg,
           },
         });
       }
@@ -275,22 +273,7 @@ export default function ScanScreen() {
       if (cancelledRef.current) return;
 
       const errorMsg = e?.message || String(e);
-      const errorName = e?.name || '';
-      const isTimeout = errorMsg.includes('timed out') || errorMsg.includes('timeout') || errorName === 'AbortError';
-      const isFileError = errorMsg.includes('Failed to read image') || errorMsg.includes('FileSystem') || errorMsg.includes('empty data');
-
-      let title = 'Analysis Failed';
-      let message = `Error: ${errorMsg.substring(0, 250)}`;
-
-      if (isTimeout) {
-        title = 'Request Timed Out';
-        message = 'The request took too long (60s limit). This may be due to a slow connection or large image. Try again or use a smaller photo.';
-      } else if (isFileError) {
-        title = 'Image Read Error';
-        message = `Could not read the image file for upload. ${errorMsg.substring(0, 200)}`;
-      }
-
-      Alert.alert(title, message, [{ text: 'OK' }]);
+      Alert.alert('Analysis Failed', `Error: ${errorMsg.substring(0, 250)}`, [{ text: 'OK' }]);
       setStep('preview');
       setShowCancel(false);
     } finally {
@@ -299,20 +282,19 @@ export default function ScanScreen() {
     }
   };
 
-  const processedRef = useRef(false);
-
-  // Calculate card width for the two options (split layout)
+  // Calculate card width for the two options
   const cardWidth = (width - 24 * 2 - 14) / 2;
 
-  // Stage progress indicator
   const getStageProgress = (): { step: number; total: number; label: string } => {
     switch (analysisStage) {
       case 'identifying':
-        return { step: 1, total: 2, label: 'Identifying Plant' };
+        return { step: 1, total: 3, label: 'Identifying Plant' };
+      case 'disease_check':
+        return { step: 2, total: 3, label: 'Checking Health' };
       case 'saving':
-        return { step: 2, total: 2, label: 'Saving Results' };
+        return { step: 3, total: 3, label: 'Saving Results' };
       default:
-        return { step: 1, total: 2, label: 'Processing' };
+        return { step: 1, total: 3, label: 'Processing' };
     }
   };
 
@@ -526,7 +508,7 @@ export default function ScanScreen() {
             </Animated.View>
           </View>
 
-          {/* Bottom area: tips and no-credits warning */}
+          {/* Bottom area */}
           <View
             style={{
               paddingBottom: insets.bottom + 20,
@@ -561,7 +543,6 @@ export default function ScanScreen() {
               </Pressable>
             )}
 
-            {/* Quick tips */}
             <View
               style={{
                 flexDirection: 'row',
@@ -760,7 +741,7 @@ export default function ScanScreen() {
               marginTop: 4,
             }}
           >
-            {[1, 2].map((stepNum) => {
+            {[1, 2, 3].map((stepNum) => {
               const progress = getStageProgress();
               const isActive = stepNum === progress.step;
               const isComplete = stepNum < progress.step;
@@ -785,7 +766,7 @@ export default function ScanScreen() {
 
           {/* Step labels */}
           <View style={{ flexDirection: 'row', gap: 16, marginTop: 2 }}>
-            {['Identify', 'Save'].map((label, idx) => {
+            {['Identify', 'Health', 'Save'].map((label, idx) => {
               const progress = getStageProgress();
               const isActive = idx + 1 === progress.step;
               const isComplete = idx + 1 < progress.step;
@@ -831,7 +812,7 @@ export default function ScanScreen() {
             </Animated.View>
           )}
 
-          {/* Cancel/Retry button — appears after 10 seconds */}
+          {/* Cancel/Retry button — appears after 15 seconds */}
           {showCancel && (
             <Animated.View
               entering={FadeInDown.duration(400)}
@@ -874,7 +855,6 @@ export default function ScanScreen() {
                 <Pressable
                   onPress={() => {
                     handleCancel();
-                    // Small delay then retry
                     setTimeout(() => {
                       handleAnalyze();
                     }, 200);

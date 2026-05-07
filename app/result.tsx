@@ -28,11 +28,8 @@ import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
 type TabKey = 'overview' | 'remedies' | 'precautions' | 'plant_health';
 
-const REMEDY_TIMEOUT_MS = 90000; // 90 seconds — AI gateway has 6s server timeout + 3 retries with backoff
+const REMEDY_TIMEOUT_MS = 90000;
 
-// Helper: wrap a promise with a timeout that properly handles cleanup.
-// Unlike Promise.race, this properly clears the timer AND attaches handlers
-// to the original promise so no orphaned rejections escape.
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -60,9 +57,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-// Safe wrapper for generateText that never throws unhandled rejections.
-// The @fastshot/ai client internally uses Promise.race for timeouts, which can
-// leave orphaned rejection promises. This ensures they're always caught.
 function safeGenerateText(
   generateText: (prompt: string, options?: any) => Promise<string | null>,
   prompt: string,
@@ -70,8 +64,6 @@ function safeGenerateText(
 ): Promise<string | null> {
   try {
     const promise = generateText(prompt, options);
-    // Attach a no-op catch to prevent unhandled rejection if the promise
-    // is orphaned by our withTimeout wrapper
     promise.catch(() => {});
     return promise;
   } catch {
@@ -85,7 +77,6 @@ export default function ResultScreen() {
   const { user } = useAuth();
   const { archivedIds, addArchivedId, removeArchivedId } = useAppStore();
 
-  // Params: either from fresh scan (topResults + imageUrl) or from archive (scanId)
   const params = useLocalSearchParams<{
     scanId?: string;
     imageUrl?: string;
@@ -104,13 +95,12 @@ export default function ResultScreen() {
   const [generating, setGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
 
-  // State for existing scan (from archive or after selection)
+  // State for existing scan
   const [scan, setScan] = useState<Tables<'scans'> | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [archiving, setArchiving] = useState(false);
 
-  // Mode: 'selection' for fresh scan, 'detail' for viewing saved scan
   const [mode, setMode] = useState<'selection' | 'detail'>('selection');
 
   // Disease identification state
@@ -185,7 +175,7 @@ export default function ResultScreen() {
     checkArchive();
   }, [scanId, user?.id]);
 
-  // Handle plant option selection — generate AI content for the chosen plant
+  // Handle plant option selection
   const handleSelectOption = async (index: number) => {
     if (!user?.id) return;
     const chosen = topResults[index];
@@ -196,7 +186,6 @@ export default function ResultScreen() {
     setGenerationError(null);
 
     try {
-      // Get targeted reference from herbal PDFs
       const targetedReference = await getTargetedPlantReference(chosen.plantName, chosen.scientificName);
 
       const referenceSection = targetedReference
@@ -332,8 +321,7 @@ Provide rich, specific, actionable information. Only return the JSON.`;
     }
   };
 
-  // Load pre-fetched disease results immediately when scan is ready (not waiting for tab click)
-  // This ensures results are cached and instantly available when user navigates to Plant Health tab
+  // Load disease results when scan is ready — cached from scan flow
   useEffect(() => {
     if (!scan || !mode || mode !== 'detail') return;
     if (diseaseApiCalled.current) return;
@@ -366,14 +354,14 @@ Provide rich, specific, actionable information. Only return the JSON.`;
       }
     }
 
-    // Check if there was a pre-fetched error — don't block, allow retry from tab
+    // Check if there was a pre-fetched error
     if (params.diseaseError) {
       diseaseApiCalled.current = true;
       setDiseaseError(params.diseaseError);
       return;
     }
 
-    // Fallback: call the API directly using the local image URI for best reliability
+    // Fallback: call the API directly
     const imageUrl = params.localImageUri || userImageUrl || scan.image_url;
     if (!imageUrl) return;
 
@@ -403,17 +391,13 @@ Provide rich, specific, actionable information. Only return the JSON.`;
       setDiseaseData(result.data);
       setDiseaseLoading(false);
 
-      // Generate AI advice based on disease results (fire and handle errors internally)
       generateDiseaseAdvice(result.data, cacheKey).catch((adviceErr) => {
         console.error('Disease advice generation failed:', adviceErr);
         setDiseaseAdviceLoading(false);
       });
     } catch (e: any) {
       console.error('Disease identification error:', e);
-      const errorMsg = e?.message?.includes('timed out') || e?.message?.includes('timeout')
-        ? 'Disease identification timed out. Your connection may be slow — please try again.'
-        : 'Failed to identify diseases. Please try again.';
-      setDiseaseError(errorMsg);
+      setDiseaseError('Failed to identify diseases. Please try again.');
       setDiseaseLoading(false);
     }
   };
@@ -477,14 +461,11 @@ Provide specific, actionable advice with real product/compound names where appli
           const parsed = JSON.parse(match[0]);
           const adviceStr = JSON.stringify(parsed);
           setDiseaseAdvice(adviceStr);
-
-          // Cache results
           diseaseCache.current[cacheKey] = { data, advice: adviceStr };
         }
       }
     } catch (e: any) {
       console.error('Disease advice generation error:', e);
-      // Still show disease results even if AI advice fails
     } finally {
       setDiseaseAdviceLoading(false);
     }
@@ -492,7 +473,6 @@ Provide specific, actionable advice with real product/compound names where appli
 
   const retryDiseaseIdentification = () => {
     diseaseApiCalled.current = false;
-    // Prefer local image URI for retry — it's the actual captured file that works best with the API
     const imageUrl = params.localImageUri || userImageUrl || scan?.image_url;
     if (!imageUrl) return;
     const cacheKey = scan?.id || imageUrl;
@@ -502,7 +482,6 @@ Provide specific, actionable advice with real product/compound names where appli
   const remedies: RemedyData | null = scan?.remedies
     ? (scan.remedies as unknown as RemedyData)
     : null;
-
 
   const confidencePercent = scan?.confidence
     ? Math.round(scan.confidence * 100)
@@ -979,7 +958,7 @@ Provide specific, actionable advice with real product/compound names where appli
   }
 
   // ============================================================
-  // DETAIL MODE: Show full plant information (after selection or from archive)
+  // DETAIL MODE: Show full plant information
   // ============================================================
   if (!scan) {
     return (
@@ -1564,7 +1543,7 @@ Provide specific, actionable advice with real product/compound names where appli
                         lineHeight: 19,
                       }}
                     >
-                      Comparing your image against known plant diseases using our disease database
+                      Comparing your image against known plant diseases
                     </Text>
                   </Animated.View>
                 )}
@@ -1812,6 +1791,22 @@ Provide specific, actionable advice with real product/compound names where appli
                           </View>
                         </View>
 
+                        {/* Description if available */}
+                        {disease.description && (
+                          <Text
+                            selectable
+                            style={{
+                              fontFamily: Fonts.regular,
+                              fontSize: 13,
+                              color: Colors.textSecondary,
+                              lineHeight: 19,
+                              paddingLeft: 38,
+                            }}
+                          >
+                            {disease.description}
+                          </Text>
+                        )}
+
                         {/* Reference images */}
                         {disease.relatedImages && disease.relatedImages.length > 0 && (
                           <View style={{ gap: 6 }}>
@@ -1862,7 +1857,7 @@ Provide specific, actionable advice with real product/compound names where appli
                   </Animated.View>
                 )}
 
-                {/* No data state - show initial prompt when not loading/no error/no data */}
+                {/* No data state */}
                 {!diseaseLoading && !diseaseError && !diseaseData && (
                   <View style={{ alignItems: 'center', paddingVertical: 24, gap: 10 }}>
                     <Ionicons name="scan-outline" size={32} color={Colors.textLight} />
@@ -1923,7 +1918,6 @@ Provide specific, actionable advice with real product/compound names where appli
                         if (advice.status === 'healthy') {
                           return (
                             <View style={{ gap: 14 }}>
-                              {/* Summary */}
                               {advice.summary && (
                                 <Text
                                   selectable
@@ -1938,7 +1932,6 @@ Provide specific, actionable advice with real product/compound names where appli
                                 </Text>
                               )}
 
-                              {/* Care Tips */}
                               {advice.care_tips && advice.care_tips.length > 0 && (
                                 <View style={{ gap: 8 }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1961,7 +1954,6 @@ Provide specific, actionable advice with real product/compound names where appli
                                 </View>
                               )}
 
-                              {/* Prevention */}
                               {advice.prevention && advice.prevention.length > 0 && (
                                 <View style={{ gap: 8 }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1984,7 +1976,6 @@ Provide specific, actionable advice with real product/compound names where appli
                                 </View>
                               )}
 
-                              {/* Optimal conditions */}
                               {advice.optimal_conditions && (
                                 <View
                                   style={{
@@ -2012,7 +2003,6 @@ Provide specific, actionable advice with real product/compound names where appli
                         // Diseased plant advice
                         return (
                           <View style={{ gap: 14 }}>
-                            {/* Severity + Summary */}
                             {advice.severity && (
                               <View
                                 style={{
@@ -2242,7 +2232,7 @@ Provide specific, actionable advice with real product/compound names where appli
                       }
                     })()}
 
-                    {/* Fallback: no advice generated yet and not loading */}
+                    {/* Fallback */}
                     {!diseaseAdvice && !diseaseAdviceLoading && (
                       <Text
                         style={{
@@ -2260,7 +2250,7 @@ Provide specific, actionable advice with real product/compound names where appli
                 </Animated.View>
               )}
 
-              {/* Agronomist disclaimer */}
+              {/* Disclaimer */}
               <View
                 style={{
                   backgroundColor: 'rgba(33,150,243,0.06)',
@@ -2284,7 +2274,6 @@ Provide specific, actionable advice with real product/compound names where appli
                   This AI-powered diagnosis is for guidance only. For critical crop decisions, confirm with laboratory testing or consult a certified agronomist.
                 </Text>
               </View>
-
             </View>
           )}
         </Animated.View>
