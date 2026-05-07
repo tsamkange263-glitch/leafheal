@@ -52,7 +52,7 @@ interface PlantNetAPIResponse {
 }
 
 const MINIMUM_CONFIDENCE = 0.05; // 5% minimum confidence threshold
-const REQUEST_TIMEOUT_MS = 45000; // 45 second timeout for slow network/large image uploads
+const REQUEST_TIMEOUT_MS = 60000; // 60 second timeout — PlantNet can take 10-30s with large images
 
 /**
  * Converts a local image URI to a proper Blob for multipart form-data upload.
@@ -63,6 +63,10 @@ const REQUEST_TIMEOUT_MS = 45000; // 45 second timeout for slow network/large im
  * On web, the standard fetch approach works fine.
  */
 async function imageUriToBlob(imageUri: string): Promise<Blob> {
+  if (!imageUri) {
+    throw new Error('Image URI is empty or undefined — cannot read file for upload.');
+  }
+
   // On web, fetch works fine with blob URIs and data URIs
   if (Platform.OS === 'web') {
     const response = await fetch(imageUri);
@@ -82,13 +86,17 @@ async function imageUriToBlob(imageUri: string): Promise<Blob> {
     if (normalizedUri.startsWith('content://')) {
       const sourceFile = new ExpoFile(normalizedUri);
       const destFile = new ExpoFile(Paths.cache, `plantnet_upload_${Date.now()}.jpg`);
-      sourceFile.copy(destFile);
+      await sourceFile.copy(destFile);
       normalizedUri = destFile.uri;
     }
 
     // Use the new expo-file-system File API to read as base64 (reliable in production)
     const file = new ExpoFile(normalizedUri);
     const base64Data = await file.base64();
+
+    if (!base64Data || base64Data.length === 0) {
+      throw new Error(`File read returned empty data. URI: ${normalizedUri.substring(0, 80)}`);
+    }
 
     // Convert base64 to a byte array
     const byteCharacters = atob(base64Data);
@@ -97,6 +105,10 @@ async function imageUriToBlob(imageUri: string): Promise<Blob> {
       byteNumbers[i] = byteCharacters.charCodeAt(i);
     }
     const byteArray = new Uint8Array(byteNumbers);
+
+    if (byteArray.length === 0) {
+      throw new Error(`Decoded image has 0 bytes. base64 length: ${base64Data.length}`);
+    }
 
     // Determine MIME type from the URI
     const extension = imageUri.split('.').pop()?.toLowerCase()?.split('?')[0] || 'jpg';
@@ -109,12 +121,19 @@ async function imageUriToBlob(imageUri: string): Promise<Blob> {
     console.warn('FileSystem read failed, falling back to fetch:', fileSystemError?.message);
     try {
       const response = await fetch(imageUri);
-      return await response.blob();
+      if (!response.ok) {
+        throw new Error(`fetch(imageUri) returned status ${response.status}`);
+      }
+      const blob = await response.blob();
+      if (blob.size === 0) {
+        throw new Error('fetch(imageUri) returned empty blob');
+      }
+      return blob;
     } catch (fetchError: any) {
       throw new Error(
         `Failed to read image for upload. ` +
         `FileSystem error: ${fileSystemError?.message || 'unknown'}. ` +
-        `Fetch error: ${fetchError?.message || 'unknown'}. ` +
+        `Fetch fallback error: ${fetchError?.message || 'unknown'}. ` +
         `URI: ${imageUri.substring(0, 100)}`
       );
     }
@@ -277,29 +296,31 @@ export async function identifyPlantWithPlantNet(
         success: false,
         error: {
           type: 'timeout',
-          message: 'The identification request timed out. Please check your internet connection and try again.',
+          message: 'The request timed out after 60 seconds. This usually means the server is slow or the image is too large. Please try again with a smaller image or on a faster connection.',
         },
       };
     }
 
     const errorMsg = error?.message || String(error);
+    const errorName = error?.name || 'Unknown';
 
+    // Always include the actual error details so users/devs can diagnose
     if (errorMsg.includes('Network') || errorMsg.includes('fetch') || errorMsg.includes('Failed to connect')) {
       return {
         success: false,
         error: {
           type: 'network_error',
-          message: 'Network error. Please check your internet connection and try again.',
+          message: `Connection failed: ${errorMsg.substring(0, 200)} [${errorName}]`,
         },
       };
     }
 
-    // Capture full error details for production debugging
+    // Surface the real error — don't hide it behind a generic message
     return {
       success: false,
       error: {
         type: 'api_error',
-        message: `Identification failed: ${errorMsg.substring(0, 150)}`,
+        message: `Identification failed: ${errorMsg.substring(0, 200)} [${errorName}]`,
       },
     };
   }
@@ -311,7 +332,7 @@ export async function identifyPlantWithPlantNet(
 
 const PLANTNET_DISEASE_API_URL = 'https://my-api.plantnet.org/v2/diseases/identify';
 const PLANTNET_DISEASE_API_KEY = '2b10FwLN1xs3J5l1EAgj8PKY3O';
-const DISEASE_REQUEST_TIMEOUT_MS = 45000; // 45 seconds for disease identification
+const DISEASE_REQUEST_TIMEOUT_MS = 60000; // 60 seconds for disease identification
 
 export interface DiseaseResult {
   name: string;
@@ -460,29 +481,30 @@ export async function identifyPlantDisease(
         success: false,
         error: {
           type: 'timeout',
-          message: 'Disease identification timed out. Please check your connection and try again.',
+          message: 'Disease identification timed out after 60 seconds. Try again with a smaller image or on a faster connection.',
         },
       };
     }
 
     const errorMsg = error?.message || String(error);
+    const errorName = error?.name || 'Unknown';
 
+    // Always surface the real error for production debugging
     if (errorMsg.includes('Network') || errorMsg.includes('fetch') || errorMsg.includes('Failed to connect')) {
       return {
         success: false,
         error: {
           type: 'network_error',
-          message: 'Network error. Please check your internet connection and try again.',
+          message: `Disease check connection failed: ${errorMsg.substring(0, 200)} [${errorName}]`,
         },
       };
     }
 
-    // Capture full error details for production debugging
     return {
       success: false,
       error: {
         type: 'api_error',
-        message: `Disease identification failed: ${errorMsg.substring(0, 150)}`,
+        message: `Disease identification failed: ${errorMsg.substring(0, 200)} [${errorName}]`,
       },
     };
   }

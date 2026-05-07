@@ -265,14 +265,23 @@ export default function ScanScreen() {
 
       if (cancelledRef.current) return;
 
-      const isTimeout = e?.message?.includes('timed out') || e?.message?.includes('timeout') || e?.name === 'AbortError';
-      Alert.alert(
-        isTimeout ? 'Request Timed Out' : 'Analysis Failed',
-        isTimeout
-          ? 'The request took too long. Please check your internet connection and try again.'
-          : 'An unexpected error occurred. Please try again with a clearer photo.',
-        [{ text: 'OK' }]
-      );
+      const errorMsg = e?.message || String(e);
+      const errorName = e?.name || '';
+      const isTimeout = errorMsg.includes('timed out') || errorMsg.includes('timeout') || errorName === 'AbortError';
+      const isFileError = errorMsg.includes('Failed to read image') || errorMsg.includes('FileSystem') || errorMsg.includes('empty data');
+
+      let title = 'Analysis Failed';
+      let message = `Error: ${errorMsg.substring(0, 250)}`;
+
+      if (isTimeout) {
+        title = 'Request Timed Out';
+        message = 'The request took too long (60s limit). This may be due to a slow connection or large image. Try again or use a smaller photo.';
+      } else if (isFileError) {
+        title = 'Image Read Error';
+        message = `Could not read the image file for upload. ${errorMsg.substring(0, 200)}`;
+      }
+
+      Alert.alert(title, message, [{ text: 'OK' }]);
       setStep('preview');
       setShowCancel(false);
     } finally {
