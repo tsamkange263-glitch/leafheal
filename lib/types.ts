@@ -120,6 +120,7 @@ export type Database = {
         Row: {
           confidence: number | null;
           created_at: string;
+          disease_results: Json | null;
           id: string;
           image_url: string | null;
           overview: string | null;
@@ -133,6 +134,7 @@ export type Database = {
         Insert: {
           confidence?: number | null;
           created_at?: string;
+          disease_results?: Json | null;
           id?: string;
           image_url?: string | null;
           overview?: string | null;
@@ -146,6 +148,7 @@ export type Database = {
         Update: {
           confidence?: number | null;
           created_at?: string;
+          disease_results?: Json | null;
           id?: string;
           image_url?: string | null;
           overview?: string | null;

@@ -271,6 +271,16 @@ Provide rich, specific, actionable information. Only return the JSON.`;
         };
       }
 
+      // Parse disease results from scan flow params to persist with the scan
+      let parsedDiseaseResults: DiseaseIdentificationResponse | null = null;
+      if (params.diseaseResults) {
+        try {
+          parsedDiseaseResults = JSON.parse(params.diseaseResults) as DiseaseIdentificationResponse | null;
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
       // Save scan to database
       const { data: scanData, error: insertErr } = await supabase
         .from('scans')
@@ -284,6 +294,7 @@ Provide rich, specific, actionable information. Only return the JSON.`;
           remedies: enrichmentData?.remedies || null,
           precautions: enrichmentData?.precautions || null,
           plant_health: enrichmentData?.plant_health || null,
+          disease_results: parsedDiseaseResults as any,
         })
         .select()
         .single();
@@ -328,14 +339,14 @@ Provide rich, specific, actionable information. Only return the JSON.`;
     }
   };
 
-  // Load disease results when scan is ready — cached from scan flow
+  // Load disease results when scan is ready — from persisted data or scan flow params
   useEffect(() => {
     if (!scan || !mode || mode !== 'detail') return;
     if (diseaseApiCalled.current) return;
 
     const cacheKey = scan.id || userImageUrl || params.localImageUri || '';
 
-    // Check cache first
+    // Check in-memory cache first
     if (diseaseCache.current[cacheKey]) {
       const cached = diseaseCache.current[cacheKey];
       setDiseaseData(cached.data);
@@ -343,21 +354,35 @@ Provide rich, specific, actionable information. Only return the JSON.`;
       return;
     }
 
-    // Use pre-fetched disease results from params if available
+    // Priority 1: Load persisted disease results from database
+    if (scan.disease_results) {
+      try {
+        const persisted = scan.disease_results as unknown as DiseaseIdentificationResponse;
+        if (persisted && (persisted.diseases || persisted.isHealthy !== undefined)) {
+          diseaseApiCalled.current = true;
+          setDiseaseData(persisted);
+          diseaseCache.current[cacheKey] = { data: persisted, advice: null };
+          return;
+        }
+      } catch {
+        // Fall through
+      }
+    }
+
+    // Priority 2: Use pre-fetched disease results from scan flow params
     if (params.diseaseResults) {
       try {
         const parsed = JSON.parse(params.diseaseResults) as DiseaseIdentificationResponse | null;
         if (parsed) {
           diseaseApiCalled.current = true;
           setDiseaseData(parsed);
-          generateDiseaseAdvice(parsed, cacheKey).catch((err) => {
-            console.error('Disease advice generation failed:', err);
-            setDiseaseAdviceLoading(false);
-          });
+          diseaseCache.current[cacheKey] = { data: parsed, advice: null };
+          // Persist to database so it's consistent on future views
+          persistDiseaseResults(scan.id, parsed);
           return;
         }
       } catch {
-        // Fall through to API call
+        // Fall through
       }
     }
 
@@ -368,7 +393,7 @@ Provide rich, specific, actionable information. Only return the JSON.`;
       return;
     }
 
-    // Fallback: call the API directly
+    // Fallback: call the API directly (only for scans that have no persisted data)
     const imageUrl = params.localImageUri || userImageUrl || scan.image_url;
     if (!imageUrl) return;
 
@@ -378,6 +403,18 @@ Provide rich, specific, actionable information. Only return the JSON.`;
       setDiseaseLoading(false);
     });
   }, [scan, mode]);
+
+  // Persist disease results to the scan record in database
+  const persistDiseaseResults = async (scanRecordId: string, data: DiseaseIdentificationResponse) => {
+    try {
+      await supabase
+        .from('scans')
+        .update({ disease_results: data as any })
+        .eq('id', scanRecordId);
+    } catch (e) {
+      console.error('Failed to persist disease results:', e);
+    }
+  };
 
   const fetchDiseaseIdentification = async (imageUrl: string, cacheKey: string) => {
     diseaseApiCalled.current = true;
@@ -397,11 +434,12 @@ Provide rich, specific, actionable information. Only return the JSON.`;
 
       setDiseaseData(result.data);
       setDiseaseLoading(false);
+      diseaseCache.current[cacheKey] = { data: result.data, advice: null };
 
-      generateDiseaseAdvice(result.data, cacheKey).catch((adviceErr) => {
-        console.error('Disease advice generation failed:', adviceErr);
-        setDiseaseAdviceLoading(false);
-      });
+      // Persist to database for consistent future views
+      if (scan?.id) {
+        persistDiseaseResults(scan.id, result.data);
+      }
     } catch (e: any) {
       console.error('Disease identification error:', e);
       setDiseaseError('Failed to identify diseases. Please try again.');
@@ -409,74 +447,6 @@ Provide rich, specific, actionable information. Only return the JSON.`;
     }
   };
 
-  const generateDiseaseAdvice = async (data: DiseaseIdentificationResponse, cacheKey: string) => {
-    setDiseaseAdviceLoading(true);
-
-    try {
-      const plantName = scan?.plant_name || 'Unknown Plant';
-      let advicePrompt: string;
-
-      if (data.isHealthy || data.diseases.length === 0) {
-        advicePrompt = `You are an expert agronomist. The plant "${plantName}" (${scan?.scientific_name || ''}) has been scanned and no diseases were detected. It appears healthy.
-
-Provide practical care advice in JSON format:
-{
-  "status": "healthy",
-  "summary": "Brief summary (1 sentence) confirming plant health",
-  "care_tips": ["tip1", "tip2", "tip3", "tip4"],
-  "prevention": ["prevention tip 1", "prevention tip 2", "prevention tip 3"],
-  "optimal_conditions": "Brief note on ideal growing conditions for this plant"
-}
-
-Only return valid JSON.`;
-      } else {
-        const diseaseList = data.diseases
-          .slice(0, 3)
-          .map((d, i) => `${i + 1}. ${d.name} (confidence: ${Math.round(d.confidence * 100)}%)${d.scientificName ? ` - ${d.scientificName}` : ''}`)
-          .join('\n');
-
-        advicePrompt = `You are an expert agronomist and plant pathologist. A leaf image of "${plantName}" (${scan?.scientific_name || ''}) was analyzed and the following diseases/conditions were detected:
-
-${diseaseList}
-
-Provide comprehensive treatment advice in JSON format:
-{
-  "status": "diseased",
-  "severity": "mild|moderate|severe",
-  "primary_disease": "Name of the most likely disease",
-  "summary": "1-2 sentence diagnosis summary for agronomists",
-  "organic_treatments": ["specific organic treatment 1", "organic treatment 2", "organic treatment 3"],
-  "chemical_treatments": ["specific chemical/fungicide treatment 1", "chemical treatment 2"],
-  "immediate_actions": ["urgent action 1", "urgent action 2"],
-  "prevention": ["prevention tip 1", "prevention tip 2", "prevention tip 3"],
-  "spread_risk": "Assessment of how likely this is to spread to other plants",
-  "recovery_timeline": "Expected recovery time with proper treatment"
-}
-
-Provide specific, actionable advice with real product/compound names where applicable. Only return valid JSON.`;
-      }
-
-      const adviceResult = await withTimeout(
-        safeGenerateText(generateText, advicePrompt),
-        REMEDY_TIMEOUT_MS,
-        'Disease advice'
-      );
-
-      if (adviceResult) {
-        const match = adviceResult.match(/\{[\s\S]*\}/);
-        if (match) {
-          const parsed = JSON.parse(match[0]);
-          const adviceStr = JSON.stringify(parsed);
-          setDiseaseAdvice(adviceStr);
-          diseaseCache.current[cacheKey] = { data, advice: adviceStr };
-        }
-      }
-    } catch (e: any) {
-      console.error('Disease advice generation error:', e);
-    } finally {
-      setDiseaseAdviceLoading(false);
-    }
-  };
 
   const retryDiseaseIdentification = () => {
     diseaseApiCalled.current = false;
@@ -1769,10 +1739,10 @@ Provide specific, actionable advice with real product/compound names where appli
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontFamily: Fonts.bold, fontSize: 15, color: Colors.error }}>
-                          {diseaseData.diseases.length} Disease{diseaseData.diseases.length > 1 ? 's' : ''} Detected
+                          Potential Issues Detected
                         </Text>
                         <Text style={{ fontFamily: Fonts.regular, fontSize: 12, color: Colors.textSecondary, marginTop: 1 }}>
-                          Top {Math.min(2, diseaseData.diseases.length)} shown · Tap for treatment details
+                          Tap for treatment details
                         </Text>
                       </View>
                     </View>
