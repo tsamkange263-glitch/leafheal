@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Pressable,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,18 +17,23 @@ import { Fonts } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { ScanCard } from '@/components/scan-card';
+import { useAppStore } from '@/store/useAppStore';
+import Animated, { FadeOut, Layout } from 'react-native-reanimated';
 import type { Tables } from '@/lib/types';
 
 export default function HistoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { setRecentScans } = useAppStore();
   const [scans, setScans] = useState<Tables<'scans'>[]>([]);
   const [filtered, setFiltered] = useState<Tables<'scans'>[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [clearingAll, setClearingAll] = useState(false);
 
   const fetchScans = useCallback(async () => {
     if (!user?.id) return;
@@ -75,6 +81,127 @@ export default function HistoryScreen() {
     setRefreshing(false);
   };
 
+  const handleDeleteScan = (scan: Tables<'scans'>) => {
+    Alert.alert(
+      'Delete Scan',
+      `Delete "${scan.plant_name || 'this scan'}" from your history?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteScan(scan),
+        },
+      ]
+    );
+  };
+
+  const deleteScan = async (scan: Tables<'scans'>) => {
+    if (!user?.id) return;
+    setDeleting(scan.id);
+
+    try {
+      // Delete associated archived remedy if any
+      await supabase
+        .from('archived_remedies')
+        .delete()
+        .eq('scan_id', scan.id)
+        .eq('user_id', user.id);
+
+      // Delete scan image from storage if exists
+      if (scan.image_url) {
+        try {
+          const urlParts = scan.image_url.split('/scan-images/');
+          if (urlParts[1]) {
+            await supabase.storage.from('scan-images').remove([urlParts[1]]);
+          }
+        } catch {
+          // Non-blocking: image cleanup failure shouldn't prevent scan deletion
+        }
+      }
+
+      // Delete the scan record
+      const { error: deleteErr } = await supabase
+        .from('scans')
+        .delete()
+        .eq('id', scan.id)
+        .eq('user_id', user.id);
+
+      if (deleteErr) throw deleteErr;
+
+      // Update local state immediately
+      setScans((prev) => prev.filter((s) => s.id !== scan.id));
+      setRecentScans(scans.filter((s) => s.id !== scan.id).slice(0, 5));
+    } catch (e) {
+      console.error('Error deleting scan:', e);
+      Alert.alert('Error', 'Failed to delete scan. Please try again.');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleClearAll = () => {
+    if (scans.length === 0) return;
+
+    Alert.alert(
+      'Clear All History',
+      'Are you sure you want to delete all scan history? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: clearAllScans,
+        },
+      ]
+    );
+  };
+
+  const clearAllScans = async () => {
+    if (!user?.id) return;
+    setClearingAll(true);
+
+    try {
+      // Delete all archived remedies for user
+      await supabase
+        .from('archived_remedies')
+        .delete()
+        .eq('user_id', user.id);
+
+      // Delete all scan images from storage
+      try {
+        const { data: files } = await supabase.storage
+          .from('scan-images')
+          .list(user.id);
+
+        if (files && files.length > 0) {
+          const filePaths = files.map((f) => `${user.id}/${f.name}`);
+          await supabase.storage.from('scan-images').remove(filePaths);
+        }
+      } catch {
+        // Non-blocking: image cleanup failure shouldn't prevent deletion
+      }
+
+      // Delete all scans for user
+      const { error: deleteErr } = await supabase
+        .from('scans')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (deleteErr) throw deleteErr;
+
+      // Update local state
+      setScans([]);
+      setFiltered([]);
+      setRecentScans([]);
+    } catch (e) {
+      console.error('Error clearing all scans:', e);
+      Alert.alert('Error', 'Failed to clear history. Please try again.');
+    } finally {
+      setClearingAll(false);
+    }
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: Colors.background }}>
       {/* Header */}
@@ -86,16 +213,56 @@ export default function HistoryScreen() {
           backgroundColor: Colors.background,
         }}
       >
-        <Text
+        <View
           style={{
-            fontFamily: Fonts.extraBold,
-            fontSize: 28,
-            color: Colors.textPrimary,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
             marginBottom: 12,
           }}
         >
-          Snap History
-        </Text>
+          <Text
+            style={{
+              fontFamily: Fonts.extraBold,
+              fontSize: 28,
+              color: Colors.textPrimary,
+            }}
+          >
+            Snap History
+          </Text>
+          {scans.length > 0 && !loading && (
+            <Pressable
+              onPress={handleClearAll}
+              disabled={clearingAll}
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+                paddingHorizontal: 12,
+                paddingVertical: 7,
+                borderRadius: 10,
+                borderCurve: 'continuous',
+                backgroundColor: clearingAll ? 'rgba(211,47,47,0.05)' : 'rgba(211,47,47,0.08)',
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              {clearingAll ? (
+                <ActivityIndicator size={14} color={Colors.error} />
+              ) : (
+                <Ionicons name="trash-outline" size={14} color={Colors.error} />
+              )}
+              <Text
+                style={{
+                  fontFamily: Fonts.semiBold,
+                  fontSize: 12,
+                  color: Colors.error,
+                }}
+              >
+                Clear All
+              </Text>
+            </Pressable>
+          )}
+        </View>
         <View
           style={{
             flexDirection: 'row',
@@ -191,15 +358,50 @@ export default function HistoryScreen() {
             />
           }
           renderItem={({ item }) => (
-            <ScanCard
-              scan={item}
-              onPress={() =>
-                router.push({
-                  pathname: '/result',
-                  params: { scanId: item.id },
-                })
-              }
-            />
+            <Animated.View
+              exiting={FadeOut.duration(250)}
+              layout={Layout.springify().damping(18).stiffness(120)}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 0 }}>
+                <View style={{ flex: 1 }}>
+                  <ScanCard
+                    scan={item}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/result',
+                        params: { scanId: item.id },
+                      })
+                    }
+                  />
+                </View>
+                <Pressable
+                  onPress={() => handleDeleteScan(item)}
+                  disabled={deleting === item.id}
+                  hitSlop={{ top: 10, bottom: 10, left: 4, right: 10 }}
+                  style={({ pressed }) => ({
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    borderCurve: 'continuous',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: pressed
+                      ? 'rgba(211,47,47,0.12)'
+                      : 'rgba(211,47,47,0.06)',
+                    marginLeft: 8,
+                    opacity: deleting === item.id ? 0.5 : 1,
+                  })}
+                  accessibilityLabel={`Delete ${item.plant_name || 'scan'}`}
+                  accessibilityRole="button"
+                >
+                  {deleting === item.id ? (
+                    <ActivityIndicator size={14} color={Colors.error} />
+                  ) : (
+                    <Ionicons name="trash-outline" size={18} color={Colors.error} />
+                  )}
+                </Pressable>
+              </View>
+            </Animated.View>
           )}
           ListEmptyComponent={
             <View
