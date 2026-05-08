@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,35 +14,25 @@ import { Fonts } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
-import type { Tables } from '@/lib/types';
 
 export default function AccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
   const { profile, setProfile, reset } = useAppStore();
-  const [payments, setPayments] = useState<Tables<'payments'>[]>([]);
-  const [, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const [profileRes, paymentsRes] = await Promise.all([
-        supabase.from('users').select('*').eq('id', user.id).single(),
-        supabase
-          .from('payments')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(10),
-      ]);
+      const profileRes = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
 
       if (profileRes.data) setProfile(profileRes.data);
-      if (paymentsRes.data) setPayments(paymentsRes.data);
     } catch (e) {
       console.error('Error fetching account data:', e);
-    } finally {
-      setLoading(false);
     }
   }, [user?.id]);
 
@@ -226,18 +216,17 @@ export default function AccountScreen() {
           {
             icon: 'receipt-outline' as const,
             label: 'Payment History',
-            action: () => {},
-            expand: true,
+            action: () => router.push('/payment-history'),
           },
           {
             icon: 'help-circle-outline' as const,
             label: 'Help & Support',
-            action: () => {},
+            action: () => router.push('/help-support'),
           },
           {
             icon: 'information-circle-outline' as const,
             label: 'About HerbScan',
-            action: () => {},
+            action: () => router.push('/about'),
           },
         ].map((item, i) => (
           <Pressable
@@ -276,107 +265,6 @@ export default function AccountScreen() {
         ))}
       </View>
 
-      {/* Payment history */}
-      {payments.length > 0 && (
-        <View style={{ marginTop: 20 }}>
-          <Text
-            style={{
-              fontFamily: Fonts.bold,
-              fontSize: 16,
-              color: Colors.textPrimary,
-              marginBottom: 10,
-            }}
-          >
-            Recent Payments
-          </Text>
-          <View
-            style={{
-              backgroundColor: Colors.card,
-              borderRadius: 16,
-              borderCurve: 'continuous',
-              overflow: 'hidden',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-            }}
-          >
-            {payments.map((p, i) => (
-              <View
-                key={p.id}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  padding: 14,
-                  gap: 12,
-                  borderBottomWidth: i < payments.length - 1 ? 0.5 : 0,
-                  borderBottomColor: Colors.border,
-                }}
-              >
-                <View
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    backgroundColor:
-                      p.status === 'success'
-                        ? 'rgba(46,125,50,0.1)'
-                        : p.status === 'failed'
-                          ? 'rgba(211,47,47,0.1)'
-                          : 'rgba(255,111,0,0.1)',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Ionicons
-                    name={
-                      p.status === 'success'
-                        ? 'checkmark-circle'
-                        : p.status === 'failed'
-                          ? 'close-circle'
-                          : 'time'
-                    }
-                    size={18}
-                    color={
-                      p.status === 'success'
-                        ? Colors.primary
-                        : p.status === 'failed'
-                          ? Colors.error
-                          : Colors.warning
-                    }
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={{
-                      fontFamily: Fonts.semiBold,
-                      fontSize: 14,
-                      color: Colors.textPrimary,
-                    }}
-                  >
-                    +{p.scans_added} scans
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: Fonts.regular,
-                      fontSize: 12,
-                      color: Colors.textSecondary,
-                    }}
-                  >
-                    {new Date(p.created_at).toLocaleDateString()}
-                  </Text>
-                </View>
-                <Text
-                  style={{
-                    fontFamily: Fonts.bold,
-                    fontSize: 14,
-                    color: Colors.textPrimary,
-                  }}
-                >
-                  ${p.amount_usd.toFixed(2)}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
 
       {/* Sign out */}
       <Pressable

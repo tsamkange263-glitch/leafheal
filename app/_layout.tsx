@@ -117,6 +117,18 @@ export default function RootLayout() {
             animation: 'slide_from_bottom',
           }}
         />
+        <Stack.Screen
+          name="payment-history"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="help-support"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="about"
+          options={{ animation: 'slide_from_right' }}
+        />
       </Stack>
     </AuthProvider>
   );
