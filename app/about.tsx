@@ -120,7 +120,7 @@ export default function AboutScreen() {
           >
             HerbScan is property of{' '}
             <Text style={{ fontFamily: Fonts.bold, color: Colors.primaryDark }}>
-              QuomodoX (Pvt) Ltd Holdings
+              QuomodoX, LLC
             </Text>
             , developed by{' '}
             <Text style={{ fontFamily: Fonts.bold, color: Colors.primaryDark }}>
