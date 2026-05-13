@@ -1,3 +1,16 @@
+/**
+ * Create Payment Intent Edge Function
+ *
+ * REQUIRED SECRETS (set in Supabase Dashboard → Edge Functions → Secrets):
+ *   - STRIPE_SECRET_KEY: Your Stripe secret key (sk_test_... for test mode,
+ *     sk_live_... for production). Without this, card payments will fail with
+ *     "Payment service is not configured" error.
+ *
+ * These are automatically available (no manual config needed):
+ *   - SUPABASE_URL
+ *   - SUPABASE_ANON_KEY
+ *   - SUPABASE_SERVICE_ROLE_KEY
+ */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 

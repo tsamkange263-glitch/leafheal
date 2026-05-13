@@ -291,9 +291,11 @@ export default function TopUpScreen() {
           return;
         }
 
-        console.error('[stripe] Payment sheet error:', result.error);
+        const sheetError = result.error || 'Payment failed. Please try again.';
+        console.error('[stripe] Payment sheet error:', sheetError);
         setStatus('failed');
-        setErrorMsg(result.error || 'Payment failed. Please try again.');
+        setErrorMsg(sheetError);
+        Alert.alert('Payment Failed', sheetError);
         await markPaymentFailed(intentData.paymentId, user.id);
         return;
       }
@@ -321,6 +323,12 @@ export default function TopUpScreen() {
           errorMessage = errObj.error;
         } else if (typeof errObj.localizedMessage === 'string' && errObj.localizedMessage) {
           errorMessage = errObj.localizedMessage;
+        } else {
+          // Last resort: stringify the object so we never show a blank error
+          const serialized = JSON.stringify(errObj);
+          if (serialized && serialized !== '{}') {
+            errorMessage = `Payment error: ${serialized}`;
+          }
         }
       } else if (typeof e === 'string' && e) {
         errorMessage = e;
@@ -328,6 +336,7 @@ export default function TopUpScreen() {
       console.error('[stripe] Card payment error:', JSON.stringify(e, null, 2) || String(e));
       setStatus('failed');
       setErrorMsg(errorMessage);
+      Alert.alert('Payment Failed', errorMessage);
     }
   };
 
