@@ -9,7 +9,6 @@
 
 import * as Crypto from "expo-crypto";
 import { supabase } from "@/lib/supabase";
-import type { PaymentConfig } from "@/lib/app-config";
 
 // ---------------------------------------------------------------------------
 // Constants (env overridable)
@@ -203,44 +202,8 @@ export async function sendEcoCashPayment(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Card Payment (Visa/Mastercard) — Paynow Advanced Payment Button
-// ---------------------------------------------------------------------------
-
-const PAYNOW_BUTTON_BASE_URL = "https://www.paynow.co.zw/Payment/BillPaymentLink";
-
-/**
- * Build a dynamic Paynow Advanced Payment Button checkout URL for card payments.
- * Uses integration ID and amount from the app_config table (passed in as config).
- */
-export function buildPaynowCheckoutUrl(
-  userReference: string,
-  config: PaymentConfig,
-  userEmail?: string
-): string {
-  const args = `id=${config.paynow_integration_id}&amount=${config.paynow_amount}&f1=${encodeURIComponent(userReference)}&l=1`;
-  const base64Encoded = btoa(args);
-  const urlSafeBase64 = encodeURIComponent(base64Encoded);
-
-  if (userEmail) {
-    return `${PAYNOW_BUTTON_BASE_URL}/${encodeURIComponent(userEmail)}?q=${urlSafeBase64}`;
-  }
-  return `${PAYNOW_BUTTON_BASE_URL}/?q=${urlSafeBase64}`;
-}
-
-/**
- * Generate a unique payment reference for the Paynow custom field (f1) — card payments only.
- * Format: HERBSCAN-{userId}-{timestamp}
- */
-export function generatePaymentReference(userId: string): string {
-  const timestamp = Math.floor(Date.now() / 1000);
-  const userShort = userId.replace(/-/g, "").substring(0, 12);
-  return `HERBSCAN-${userShort}-${timestamp}`;
-}
-
 /**
  * Check payment status by querying the payments table directly.
- * Used for card payments where webhook updates the DB.
  * Requires userId to ensure users can only check their own payments.
  */
 export async function checkPaymentStatusFromDB(paymentId: string, userId: string): Promise<string> {

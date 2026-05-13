@@ -512,33 +512,71 @@ export default function PaymentHistoryScreen() {
                     )}
                   </View>
 
-                  {/* EcoCash number if available */}
-                  {payment.ecocash_number && (
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 4,
-                        paddingLeft: 48,
-                      }}
-                    >
-                      <Ionicons
-                        name="phone-portrait-outline"
-                        size={12}
-                        color={Colors.textLight}
-                      />
-                      <Text
-                        selectable
-                        style={{
-                          fontFamily: Fonts.regular,
-                          fontSize: 12,
-                          color: Colors.textLight,
-                        }}
-                      >
-                        EcoCash: {payment.ecocash_number}
-                      </Text>
-                    </View>
-                  )}
+                  {/* Payment method indicator */}
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      paddingLeft: 48,
+                    }}
+                  >
+                    {payment.payment_method === 'stripe' ? (
+                      <>
+                        <Ionicons
+                          name="card-outline"
+                          size={12}
+                          color={Colors.textLight}
+                        />
+                        <Text
+                          selectable
+                          style={{
+                            fontFamily: Fonts.regular,
+                            fontSize: 12,
+                            color: Colors.textLight,
+                          }}
+                        >
+                          Card (Stripe)
+                        </Text>
+                      </>
+                    ) : payment.ecocash_number ? (
+                      <>
+                        <Ionicons
+                          name="phone-portrait-outline"
+                          size={12}
+                          color={Colors.textLight}
+                        />
+                        <Text
+                          selectable
+                          style={{
+                            fontFamily: Fonts.regular,
+                            fontSize: 12,
+                            color: Colors.textLight,
+                          }}
+                        >
+                          EcoCash: {payment.ecocash_number}
+                        </Text>
+                      </>
+                    ) : payment.payment_method === 'card' ? (
+                      <>
+                        <Ionicons
+                          name="card-outline"
+                          size={12}
+                          color={Colors.textLight}
+                        />
+                        <Text
+                          selectable
+                          style={{
+                            fontFamily: Fonts.regular,
+                            fontSize: 12,
+                            color: Colors.textLight,
+                          }}
+                        >
+                          Card (Paynow)
+                        </Text>
+                      </>
+                    ) : null}
+                  </View>
                 </View>
               );
             })}

@@ -8,6 +8,7 @@ import { Platform } from 'react-native';
 import { AuthProvider } from '@fastshot/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import { StripeProviderWrapper } from '@/components/stripe-provider';
 
 const PENDING_CONFIRMATION_KEY = 'herbscan_pending_email_confirmation';
 
@@ -91,45 +92,47 @@ export default function RootLayout() {
       }}
       onSignIn={handleSignIn}
     >
-      <StatusBar style="dark" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: '#F1F8E9' },
-          animation: 'slide_from_right',
-        }}
-      >
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="scan"
-          options={{ animation: 'slide_from_bottom' }}
-        />
-        <Stack.Screen
-          name="result"
-          options={{ animation: 'slide_from_right' }}
-        />
-        <Stack.Screen
-          name="topup"
-          options={{
-            presentation: 'modal',
-            animation: 'slide_from_bottom',
+      <StripeProviderWrapper>
+        <StatusBar style="dark" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: '#F1F8E9' },
+            animation: 'slide_from_right',
           }}
-        />
-        <Stack.Screen
-          name="payment-history"
-          options={{ animation: 'slide_from_right' }}
-        />
-        <Stack.Screen
-          name="help-support"
-          options={{ animation: 'slide_from_right' }}
-        />
-        <Stack.Screen
-          name="about"
-          options={{ animation: 'slide_from_right' }}
-        />
-      </Stack>
+        >
+          <Stack.Screen name="index" />
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen
+            name="scan"
+            options={{ animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen
+            name="result"
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="topup"
+            options={{
+              presentation: 'modal',
+              animation: 'slide_from_bottom',
+            }}
+          />
+          <Stack.Screen
+            name="payment-history"
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="help-support"
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="about"
+            options={{ animation: 'slide_from_right' }}
+          />
+        </Stack>
+      </StripeProviderWrapper>
     </AuthProvider>
   );
 }
