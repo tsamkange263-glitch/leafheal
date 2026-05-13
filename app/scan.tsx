@@ -122,7 +122,7 @@ export default function ScanScreen() {
     if (credits <= 0) {
       Alert.alert(
         'Free Scans Used Up',
-        "You've used all your free scans! Top up to continue identifying plants — $1 for 20 scans.",
+        "You've used all your free scans! Top up to continue identifying plants — $1.25 for 15 scans.",
         [
           { text: 'Not Now', style: 'cancel' },
           { text: 'Top Up Now', onPress: () => router.push('/topup') },
@@ -197,7 +197,7 @@ export default function ScanScreen() {
     if (credits <= 0) {
       Alert.alert(
         'Free Scans Used Up',
-        "You've used all your free scans! Top up to continue identifying plants — $1 for 20 scans.",
+        "You've used all your free scans! Top up to continue identifying plants — $1.25 for 15 scans.",
         [
           { text: 'Not Now', style: 'cancel' },
           { text: 'Top Up Now', onPress: () => router.push('/topup') },
@@ -582,7 +582,7 @@ export default function ScanScreen() {
                   color: Colors.ecocash,
                 }}
               >
-                Free scans used up — $1 for 20 more
+                Free scans used up — $1.25 for 15 more
               </Text>
             </Pressable>
           )}

@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const STRIPE_WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET");
-const DEFAULT_SCANS_PER_TOPUP = 12;
+const DEFAULT_SCANS_PER_TOPUP = 15;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

@@ -17,8 +17,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // Read from environment variable (set via Supabase Dashboard/CLI secrets)
 // Falls back to the configured test key for development
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY") || "sk_test_51TWRgL9bzIIw4TAux2b5nhWHYiH2KubYuCBDa0S2eaj2LzWOpAgTMkq59Dtc4u0b6xFGtWNFCNiBUyYTycPwSXcm00FqzHaWXm";
-const DEFAULT_SCANS_PER_TOPUP = 12;
-const AMOUNT_USD = 100; // $1.00 in cents
+const DEFAULT_SCANS_PER_TOPUP = 15;
+const DEFAULT_AMOUNT_CENTS = 125; // $1.25 in cents
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -93,24 +93,31 @@ Deno.serve(async (req: Request) => {
     // Admin client for DB operations
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch scans_per_payment from app_config
+    // Fetch dynamic pricing from pricing_config table
     let scansPerTopup = DEFAULT_SCANS_PER_TOPUP;
+    let amountCents = DEFAULT_AMOUNT_CENTS;
     try {
-      const { data: configData } = await supabaseAdmin
-        .from("app_config")
-        .select("value")
-        .eq("key", "scans_per_payment")
+      const { data: pricingData } = await supabaseAdmin
+        .from("pricing_config")
+        .select("price_usd, scan_quantity")
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .single();
 
-      if (configData?.value) {
-        const parsed = parseInt(configData.value, 10);
-        if (!isNaN(parsed) && parsed > 0) {
-          scansPerTopup = parsed;
+      if (pricingData) {
+        const parsedPrice = parseFloat(pricingData.price_usd);
+        const parsedScans = pricingData.scan_quantity;
+        if (!isNaN(parsedPrice) && parsedPrice > 0) {
+          amountCents = Math.round(parsedPrice * 100);
+        }
+        if (parsedScans && parsedScans > 0) {
+          scansPerTopup = parsedScans;
         }
       }
     } catch (e) {
       console.warn(
-        "[create-payment-intent] Could not fetch config, using default",
+        "[create-payment-intent] Could not fetch pricing config, using defaults",
         e
       );
     }
@@ -125,7 +132,7 @@ Deno.serve(async (req: Request) => {
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
-          amount: String(AMOUNT_USD),
+          amount: String(amountCents),
           currency: "usd",
           "automatic_payment_methods[enabled]": "true",
           "metadata[user_id]": user.id,
@@ -169,7 +176,7 @@ Deno.serve(async (req: Request) => {
       .from("payments")
       .insert({
         user_id: user.id,
-        amount_usd: AMOUNT_USD / 100,
+        amount_usd: amountCents / 100,
         scans_added: scansPerTopup,
         status: "pending",
         paynow_reference: paymentIntent.id,
@@ -199,7 +206,7 @@ Deno.serve(async (req: Request) => {
         paymentIntentId: paymentIntent.id,
         paymentId: payment.id,
         scansToAdd: scansPerTopup,
-        amount: AMOUNT_USD / 100,
+        amount: amountCents / 100,
       }),
       {
         status: 200,

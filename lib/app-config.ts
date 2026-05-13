@@ -7,12 +7,25 @@ export interface PaymentConfig {
   scans_per_payment: number;
 }
 
+export interface PricingConfig {
+  price_usd: number;
+  scan_quantity: number;
+  currency: string;
+}
+
 // Default fallback values (used if database fetch fails)
 const DEFAULT_CONFIG: PaymentConfig = {
   paynow_integration_id: '24565',
   paynow_amount: '1.25',
   paynow_ecocash_amount: '1.25',
-  scans_per_payment: 20,
+  scans_per_payment: 15,
+};
+
+// Default pricing fallback
+const DEFAULT_PRICING: PricingConfig = {
+  price_usd: 1.25,
+  scan_quantity: 15,
+  currency: 'USD',
 };
 
 const CONFIG_KEYS = [
@@ -89,6 +102,68 @@ export async function getPaymentConfig(): Promise<PaymentConfig> {
 export function invalidateConfigCache(): void {
   cachedConfig = null;
   cacheTimestamp = 0;
+  cachedPricing = null;
+  pricingCacheTimestamp = 0;
+}
+
+// Pricing config cache
+let cachedPricing: PricingConfig | null = null;
+let pricingCacheTimestamp = 0;
+
+/**
+ * Fetch the active pricing configuration from the pricing_config table.
+ * Returns the current price and scan quantity for purchases.
+ * Falls back to hardcoded defaults if the fetch fails.
+ */
+export async function getPricingConfig(): Promise<PricingConfig> {
+  const now = Date.now();
+
+  // Return cached pricing if still fresh
+  if (cachedPricing && now - pricingCacheTimestamp < CACHE_TTL_MS) {
+    return cachedPricing;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('pricing_config')
+      .select('price_usd, scan_quantity, currency')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      console.error('[app-config] Failed to fetch pricing config:', error.message);
+      return cachedPricing ?? DEFAULT_PRICING;
+    }
+
+    if (!data) {
+      console.warn('[app-config] No active pricing config found, using defaults');
+      return cachedPricing ?? DEFAULT_PRICING;
+    }
+
+    const pricing: PricingConfig = {
+      price_usd: parseFloat(String(data.price_usd)),
+      scan_quantity: data.scan_quantity,
+      currency: data.currency || 'USD',
+    };
+
+    // Validate values
+    if (isNaN(pricing.price_usd) || pricing.price_usd <= 0) {
+      pricing.price_usd = DEFAULT_PRICING.price_usd;
+    }
+    if (!pricing.scan_quantity || pricing.scan_quantity <= 0) {
+      pricing.scan_quantity = DEFAULT_PRICING.scan_quantity;
+    }
+
+    cachedPricing = pricing;
+    pricingCacheTimestamp = now;
+
+    return pricing;
+  } catch (err) {
+    console.error('[app-config] Unexpected error fetching pricing config:', err);
+    return cachedPricing ?? DEFAULT_PRICING;
+  }
 }
 
 /**

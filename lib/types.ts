@@ -223,6 +223,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      pricing_config: {
+        Row: {
+          id: string;
+          price_usd: number;
+          scan_quantity: number;
+          currency: string;
+          is_active: boolean;
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          price_usd?: number;
+          scan_quantity?: number;
+          currency?: string;
+          is_active?: boolean;
+          description?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          price_usd?: number;
+          scan_quantity?: number;
+          currency?: string;
+          is_active?: boolean;
+          description?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;

@@ -135,7 +135,7 @@ export function CreditBadge({ credits, showTopUp = true, compact = false, isTria
             marginLeft: 4,
           }}
         >
-          Top up for $1 to get 20 plant scans
+          Top up for $1.25 to get 15 plant scans
         </Text>
       )}
     </View>

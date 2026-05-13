@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 // Default fallback if config fetch fails
-const DEFAULT_SCANS_PER_TOPUP = 20;
+const DEFAULT_SCANS_PER_TOPUP = 15;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -82,31 +82,33 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch scans_per_payment from app_config table (dynamic configuration)
+    // Fetch scan_quantity from pricing_config table (dynamic configuration)
     let scansPerTopup = DEFAULT_SCANS_PER_TOPUP;
     try {
-      const { data: configData, error: configError } = await supabase
-        .from("app_config")
-        .select("value")
-        .eq("key", "scans_per_payment")
+      const { data: pricingData, error: pricingError } = await supabase
+        .from("pricing_config")
+        .select("scan_quantity")
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .single();
 
-      if (!configError && configData?.value) {
-        const parsed = parseInt(configData.value, 10);
-        if (!isNaN(parsed) && parsed > 0) {
+      if (!pricingError && pricingData?.scan_quantity) {
+        const parsed = pricingData.scan_quantity;
+        if (parsed > 0) {
           scansPerTopup = parsed;
           console.log(
-            `[paynow-webhook] Using configured scans_per_payment: ${scansPerTopup}`
+            `[paynow-webhook] Using configured scan_quantity: ${scansPerTopup}`
           );
         }
       } else {
         console.warn(
-          `[paynow-webhook] Could not fetch scans_per_payment config, using default: ${DEFAULT_SCANS_PER_TOPUP}`
+          `[paynow-webhook] Could not fetch pricing config, using default: ${DEFAULT_SCANS_PER_TOPUP}`
         );
       }
     } catch (configErr) {
       console.warn(
-        `[paynow-webhook] Error fetching config, using default: ${DEFAULT_SCANS_PER_TOPUP}`,
+        `[paynow-webhook] Error fetching pricing config, using default: ${DEFAULT_SCANS_PER_TOPUP}`,
         configErr
       );
     }

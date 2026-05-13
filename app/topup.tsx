@@ -28,23 +28,19 @@ import {
   markPaymentFailed,
 } from '@/lib/stripe';
 import { openPaymentSheet } from '@/lib/stripe-payment-sheet';
-import { getPaymentConfig, type PaymentConfig } from '@/lib/app-config';
+import { getPricingConfig, type PricingConfig } from '@/lib/app-config';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 type PaymentStatus = 'idle' | 'processing' | 'polling' | 'success' | 'failed';
 type PaymentMethod = 'ecocash' | 'card';
 
 // Fallback defaults (used while config is loading)
-const DEFAULT_ECOCASH_AMOUNT_USD = 1.00;
-const DEFAULT_SCANS_PER_TOPUP = 12;
+const DEFAULT_AMOUNT_USD = 1.25;
+const DEFAULT_SCANS_PER_TOPUP = 15;
 
 // EcoCash polling: 6 attempts × 5 seconds = 30 seconds max
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 6;
-
-// Stripe card payment uses $1 USD for 12 scans
-const STRIPE_AMOUNT_USD = 1.00;
-const STRIPE_SCANS = 12;
 
 export default function TopUpScreen() {
   const router = useRouter();
@@ -55,7 +51,7 @@ export default function TopUpScreen() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ecocash');
   const [status, setStatus] = useState<PaymentStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const [paymentConfig, setPaymentConfig] = useState<PaymentConfig | null>(null);
+  const [pricingConfig, setPricingConfig] = useState<PricingConfig | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollAttemptsRef = useRef(0);
@@ -65,27 +61,25 @@ export default function TopUpScreen() {
 
   const credits = profile?.scan_credits ?? 0;
 
-  // Derived config values
-  const ECOCASH_AMOUNT_USD = paymentConfig
-    ? parseFloat(paymentConfig.paynow_ecocash_amount)
-    : DEFAULT_ECOCASH_AMOUNT_USD;
-  const SCANS_PER_TOPUP = paymentConfig?.scans_per_payment ?? DEFAULT_SCANS_PER_TOPUP;
+  // Derived config values — unified pricing from pricing_config table
+  const AMOUNT_USD = pricingConfig?.price_usd ?? DEFAULT_AMOUNT_USD;
+  const SCANS_PER_TOPUP = pricingConfig?.scan_quantity ?? DEFAULT_SCANS_PER_TOPUP;
 
-  // Show the amount for the currently selected method
-  const displayAmount = paymentMethod === 'ecocash' ? ECOCASH_AMOUNT_USD : STRIPE_AMOUNT_USD;
-  const displayScans = paymentMethod === 'ecocash' ? SCANS_PER_TOPUP : STRIPE_SCANS;
+  // Both payment methods use the same dynamic pricing
+  const displayAmount = AMOUNT_USD;
+  const displayScans = SCANS_PER_TOPUP;
 
-  // Fetch payment configuration from database on mount
+  // Fetch pricing configuration from database on mount
   useEffect(() => {
     let cancelled = false;
     async function loadConfig() {
       try {
-        const config = await getPaymentConfig();
+        const pricing = await getPricingConfig();
         if (!cancelled) {
-          setPaymentConfig(config);
+          setPricingConfig(pricing);
         }
       } catch (err) {
-        console.error('[topup] Failed to load payment config:', err);
+        console.error('[topup] Failed to load pricing config:', err);
       } finally {
         if (!cancelled) {
           setConfigLoading(false);
@@ -223,7 +217,7 @@ export default function TopUpScreen() {
         .insert({
           user_id: user.id,
           ecocash_number: cleanedPhone,
-          amount_usd: ECOCASH_AMOUNT_USD,
+          amount_usd: AMOUNT_USD,
           scans_added: SCANS_PER_TOPUP,
           status: 'pending',
           paynow_reference: reference,
@@ -234,7 +228,7 @@ export default function TopUpScreen() {
 
       if (insertErr) throw insertErr;
 
-      const result = await sendEcoCashPayment(ECOCASH_AMOUNT_USD, cleanedPhone, reference);
+      const result = await sendEcoCashPayment(AMOUNT_USD, cleanedPhone, reference);
 
       if (!result.success || !result.pollUrl) {
         await supabase
@@ -874,8 +868,8 @@ export default function TopUpScreen() {
               : [
                   { step: '1', text: 'Tap "Pay with Card"' },
                   { step: '2', text: 'Enter your card details or use Google/Apple Pay' },
-                  { step: '3', text: `Confirm the $${STRIPE_AMOUNT_USD.toFixed(2)} payment` },
-                  { step: '4', text: `${STRIPE_SCANS} scan credits added instantly!` },
+                  { step: '3', text: `Confirm the $${AMOUNT_USD.toFixed(2)} payment` },
+                  { step: '4', text: `${SCANS_PER_TOPUP} scan credits added instantly!` },
                 ].map((item, i) => (
                   <View
                     key={i}
@@ -1062,7 +1056,7 @@ export default function TopUpScreen() {
                     lineHeight: 18,
                   }}
                 >
-                  {`• Check your phone for the EcoCash USSD prompt\n• Enter your PIN to confirm $${ECOCASH_AMOUNT_USD.toFixed(2)} payment\n• This will timeout after 30 seconds`}
+                  {`• Check your phone for the EcoCash USSD prompt\n• Enter your PIN to confirm $${AMOUNT_USD.toFixed(2)} payment\n• This will timeout after 30 seconds`}
                 </Text>
               </View>
 

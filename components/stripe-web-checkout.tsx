@@ -19,6 +19,7 @@ import {
 } from '@stripe/react-stripe-js';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { resolveWebPaymentSheet } from '@/lib/stripe-web-payment-bridge';
+import { getPricingConfig } from '@/lib/app-config';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
 
@@ -35,7 +36,7 @@ function getStripe(): Promise<Stripe | null> {
 /**
  * Inner checkout form that uses Stripe Elements hooks.
  */
-function CheckoutForm({ onClose }: { onClose: () => void }) {
+function CheckoutForm({ onClose, priceLabel, scansLabel }: { onClose: () => void; priceLabel: string; scansLabel: string }) {
   const stripe = useStripe();
   const elements = useElements();
   const [loading, setLoading] = useState(false);
@@ -136,7 +137,7 @@ function CheckoutForm({ onClose }: { onClose: () => void }) {
                 color: Colors.textSecondary,
               }}
             >
-              $1.00 USD — 12 Plant Scans
+              {priceLabel} USD — {scansLabel} Plant Scans
             </Text>
           </View>
           <Pressable
@@ -223,7 +224,7 @@ function CheckoutForm({ onClose }: { onClose: () => void }) {
                 color: Colors.white,
               }}
             >
-              Pay $1.00
+              Pay {priceLabel}
             </Text>
           )}
         </Pressable>
@@ -253,12 +254,22 @@ function CheckoutForm({ onClose }: { onClose: () => void }) {
 export function StripeWebCheckout() {
   const [visible, setVisible] = useState(false);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [priceLabel, setPriceLabel] = useState('$1.25');
+  const [scansLabel, setScansLabel] = useState('15');
 
-  const handleOpen = useCallback((e: Event) => {
+  const handleOpen = useCallback(async (e: Event) => {
     const detail = (e as CustomEvent).detail;
     if (detail?.clientSecret) {
       setClientSecret(detail.clientSecret);
       setVisible(true);
+      // Fetch latest pricing for display
+      try {
+        const pricing = await getPricingConfig();
+        setPriceLabel(`$${pricing.price_usd.toFixed(2)}`);
+        setScansLabel(String(pricing.scan_quantity));
+      } catch {
+        // Keep defaults
+      }
     }
   }, []);
 
@@ -300,7 +311,7 @@ export function StripeWebCheckout() {
           },
         }}
       >
-        <CheckoutForm onClose={handleClose} />
+        <CheckoutForm onClose={handleClose} priceLabel={priceLabel} scansLabel={scansLabel} />
       </Elements>
     </Modal>
   );
