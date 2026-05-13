@@ -90,7 +90,8 @@ export default function ResultScreen() {
 
   // State for fresh identification flow
   const [topResults, setTopResults] = useState<PlantNetResult[]>([]);
-  const [userImageUrl, setUserImageUrl] = useState<string>('');
+  const [userImageUrl, setUserImageUrl] = useState<string>(''); // For display (can be local URI)
+  const [permanentImageUrl, setPermanentImageUrl] = useState<string>(''); // Supabase Storage URL only
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -126,7 +127,9 @@ export default function ResultScreen() {
       try {
         const parsed = JSON.parse(params.topResults) as PlantNetResult[];
         setTopResults(parsed);
-        setUserImageUrl(params.imageUrl || params.localImageUri || '');
+        // Use local URI for immediate display, but track permanent URL separately for DB storage
+        setUserImageUrl(params.localImageUri || params.imageUrl || '');
+        setPermanentImageUrl(params.imageUrl || '');
         setMode('selection');
         setLoading(false);
       } catch {
@@ -281,12 +284,12 @@ Provide rich, specific, actionable information. Only return the JSON.`;
         }
       }
 
-      // Save scan to database
+      // Save scan to database — only store permanent Supabase Storage URL, never local file paths
       const { data: scanData, error: insertErr } = await supabase
         .from('scans')
         .insert({
           user_id: user.id,
-          image_url: userImageUrl || null,
+          image_url: permanentImageUrl || null,
           plant_name: chosen.plantName || 'Unknown Plant',
           scientific_name: chosen.scientificName || null,
           confidence: chosen.confidence || 0.5,

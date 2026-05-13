@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { File as ExpoFile } from 'expo-file-system';
 import { useAuth } from '@fastshot/auth';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
@@ -289,24 +290,33 @@ export default function ScanScreen() {
         const fileName = `${user.id}/${Date.now()}.jpg`;
 
         if (Platform.OS === 'web') {
+          // On web, fetch + blob works correctly for data/blob URIs
           const response = await fetch(primaryImage);
           const blob = await response.blob();
           const { error: uploadErr } = await supabase.storage
             .from('scan-images')
             .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
 
-          if (!uploadErr) {
+          if (uploadErr) {
+            console.error('Web upload error:', uploadErr);
+          } else {
             const { data: urlData } = supabase.storage.from('scan-images').getPublicUrl(fileName);
             imageUrl = urlData.publicUrl;
           }
         } else {
-          const fileResponse = await fetch(primaryImage);
-          const blob = await fileResponse.blob();
+          // On native, use expo-file-system's File class (implements Blob) to read the image
+          // and convert to ArrayBuffer for reliable Supabase Storage upload
+          const file = new ExpoFile(primaryImage);
+          const arrayBuffer = await file.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+
           const { error: uploadErr } = await supabase.storage
             .from('scan-images')
-            .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+            .upload(fileName, uint8Array, { contentType: 'image/jpeg', upsert: true });
 
-          if (!uploadErr) {
+          if (uploadErr) {
+            console.error('Native upload error:', uploadErr);
+          } else {
             const { data: urlData } = supabase.storage.from('scan-images').getPublicUrl(fileName);
             imageUrl = urlData.publicUrl;
           }
@@ -330,8 +340,8 @@ export default function ScanScreen() {
         router.replace({
           pathname: '/result',
           params: {
-            imageUrl: imageUrl || validImages[0],
-            localImageUri: validImages[0],
+            imageUrl: imageUrl, // Only pass permanent Supabase Storage URL (empty if upload failed)
+            localImageUri: validImages[0], // Local URI only for immediate display during this session
             topResults: JSON.stringify(topResults),
             diseaseResults: diseaseResultData
               ? JSON.stringify(diseaseResultData)
