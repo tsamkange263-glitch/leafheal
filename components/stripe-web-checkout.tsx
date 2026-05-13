@@ -2,8 +2,11 @@
  * StripeWebCheckout — Web-only modal overlay for Stripe card payments.
  * Listens for 'stripe-web-checkout' custom events and presents a
  * Payment Element form using @stripe/react-stripe-js.
+ *
+ * The Stripe publishable key is fetched dynamically from the Supabase
+ * app_config table, allowing key rotation without app rebuild.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,14 +22,20 @@ import {
 } from '@stripe/react-stripe-js';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { resolveWebPaymentSheet } from '@/lib/stripe-web-payment-bridge';
-import { getPricingConfig } from '@/lib/app-config';
+import { getPricingConfig, getStripePublishableKey } from '@/lib/app-config';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
 
-const publishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+// Cache the Stripe instance per publishable key to avoid re-initializing
 let stripePromise: Promise<Stripe | null> | null = null;
+let cachedKeyForStripe: string | null = null;
 
-function getStripe(): Promise<Stripe | null> {
+function getStripe(publishableKey: string): Promise<Stripe | null> {
+  // If key changed (e.g., test → live), reset and re-init
+  if (cachedKeyForStripe !== publishableKey) {
+    stripePromise = null;
+    cachedKeyForStripe = publishableKey;
+  }
   if (!stripePromise) {
     stripePromise = loadStripe(publishableKey);
   }
@@ -250,12 +259,35 @@ function CheckoutForm({ onClose, priceLabel, scansLabel }: { onClose: () => void
 /**
  * Main component that mounts at app root level.
  * Listens for custom events and shows the checkout modal.
+ * Fetches the Stripe publishable key dynamically from Supabase on mount.
  */
 export function StripeWebCheckout() {
   const [visible, setVisible] = useState(false);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [priceLabel, setPriceLabel] = useState('$1.25');
   const [scansLabel, setScansLabel] = useState('15');
+  const [publishableKey, setPublishableKey] = useState(
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || ''
+  );
+  const keyFetchedRef = useRef(false);
+
+  // Fetch the dynamic publishable key on mount
+  useEffect(() => {
+    if (keyFetchedRef.current) return;
+    keyFetchedRef.current = true;
+
+    async function fetchKey() {
+      try {
+        const key = await getStripePublishableKey();
+        if (key) {
+          setPublishableKey(key);
+        }
+      } catch (err) {
+        console.warn('[stripe-web-checkout] Failed to fetch dynamic key, using env fallback:', err);
+      }
+    }
+    fetchKey();
+  }, []);
 
   const handleOpen = useCallback(async (e: Event) => {
     const detail = (e as CustomEvent).detail;
@@ -285,7 +317,7 @@ export function StripeWebCheckout() {
     }
   }, [handleOpen]);
 
-  if (!visible || !clientSecret) return null;
+  if (!visible || !clientSecret || !publishableKey) return null;
 
   return (
     <Modal
@@ -298,7 +330,7 @@ export function StripeWebCheckout() {
       }}
     >
       <Elements
-        stripe={getStripe()}
+        stripe={getStripe(publishableKey)}
         options={{
           clientSecret,
           appearance: {

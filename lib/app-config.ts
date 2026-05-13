@@ -104,6 +104,8 @@ export function invalidateConfigCache(): void {
   cacheTimestamp = 0;
   cachedPricing = null;
   pricingCacheTimestamp = 0;
+  cachedStripePublishableKey = null;
+  stripeKeyCacheTimestamp = 0;
 }
 
 // Pricing config cache
@@ -188,4 +190,65 @@ export async function getConfigValue(key: string): Promise<string | null> {
     console.error(`[app-config] Unexpected error fetching key "${key}":`, err);
     return null;
   }
+}
+
+// =========================================================================
+// Stripe Publishable Key — fetched from DB with cache + env fallback
+// =========================================================================
+
+let cachedStripePublishableKey: string | null = null;
+let stripeKeyCacheTimestamp = 0;
+
+/**
+ * Fetch the Stripe publishable key from the app_config table.
+ * This allows switching between test/live keys without rebuilding the app.
+ * Falls back to EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY env variable if DB fetch fails.
+ */
+export async function getStripePublishableKey(): Promise<string> {
+  const now = Date.now();
+
+  // Return cached key if still fresh
+  if (cachedStripePublishableKey && now - stripeKeyCacheTimestamp < CACHE_TTL_MS) {
+    return cachedStripePublishableKey;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('value')
+      .eq('key', 'stripe_publishable_key')
+      .single();
+
+    if (error || !data?.value) {
+      console.warn(
+        '[app-config] Failed to fetch stripe_publishable_key from DB, using env fallback:',
+        error?.message
+      );
+      return getStripePublishableKeyFallback();
+    }
+
+    // Validate the key format (should start with pk_test_ or pk_live_)
+    const key = data.value.trim();
+    if (!key.startsWith('pk_test_') && !key.startsWith('pk_live_')) {
+      console.warn('[app-config] Invalid stripe publishable key format in DB, using env fallback');
+      return getStripePublishableKeyFallback();
+    }
+
+    cachedStripePublishableKey = key;
+    stripeKeyCacheTimestamp = now;
+
+    return key;
+  } catch (err) {
+    console.error('[app-config] Unexpected error fetching Stripe publishable key:', err);
+    return getStripePublishableKeyFallback();
+  }
+}
+
+function getStripePublishableKeyFallback(): string {
+  const envKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+  if (envKey) {
+    cachedStripePublishableKey = envKey;
+    stripeKeyCacheTimestamp = Date.now();
+  }
+  return envKey;
 }

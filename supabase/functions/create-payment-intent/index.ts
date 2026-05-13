@@ -1,10 +1,14 @@
 /**
  * Create Payment Intent Edge Function
  *
- * REQUIRED SECRETS (set in Supabase Dashboard → Edge Functions → Secrets):
- *   - STRIPE_SECRET_KEY: Your Stripe secret key (sk_test_... for test mode,
- *     sk_live_... for production). Without this, card payments will fail with
- *     "Payment service is not configured" error.
+ * The Stripe secret key is read dynamically from the `app_config` table
+ * (key: 'stripe_secret_key'). This allows switching between test/live keys
+ * by updating the database — no redeployment needed.
+ *
+ * Fallback chain:
+ *   1. app_config table (preferred — dynamic, no rebuild needed)
+ *   2. STRIPE_SECRET_KEY env variable (set via Dashboard secrets)
+ *   3. Hardcoded test key (development safety net)
  *
  * These are automatically available (no manual config needed):
  *   - SUPABASE_URL
@@ -14,11 +18,49 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// Read from environment variable (set via Supabase Dashboard/CLI secrets)
-// Falls back to the configured test key for development
-const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY") || "sk_test_51TWRgL9bzIIw4TAux2b5nhWHYiH2KubYuCBDa0S2eaj2LzWOpAgTMkq59Dtc4u0b6xFGtWNFCNiBUyYTycPwSXcm00FqzHaWXm";
+// Env fallback (set via Supabase Dashboard/CLI secrets)
+const ENV_STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY") || "";
+// Hardcoded test key as last-resort fallback for development
+const FALLBACK_STRIPE_SECRET_KEY = "sk_test_51TWRgL9bzIIw4TAux2b5nhWHYiH2KubYuCBDa0S2eaj2LzWOpAgTMkq59Dtc4u0b6xFGtWNFCNiBUyYTycPwSXcm00FqzHaWXm";
 const DEFAULT_SCANS_PER_TOPUP = 15;
 const DEFAULT_AMOUNT_CENTS = 125; // $1.25 in cents
+
+/**
+ * Fetch the Stripe secret key from the app_config table using service role.
+ * Falls back to env variable, then hardcoded test key.
+ */
+async function getStripeSecretKey(supabaseAdmin: ReturnType<typeof createClient>): Promise<string> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("app_config")
+      .select("value")
+      .eq("key", "stripe_secret_key")
+      .single();
+
+    if (!error && data?.value) {
+      const key = data.value.trim();
+      // Validate format
+      if (key.startsWith("sk_test_") || key.startsWith("sk_live_")) {
+        return key;
+      }
+      console.warn("[create-payment-intent] Invalid stripe_secret_key format in DB");
+    } else if (error) {
+      console.warn("[create-payment-intent] Failed to fetch stripe_secret_key from DB:", error.message);
+    }
+  } catch (e) {
+    console.warn("[create-payment-intent] Error fetching stripe_secret_key from DB:", e);
+  }
+
+  // Fallback to environment variable
+  if (ENV_STRIPE_SECRET_KEY) {
+    console.log("[create-payment-intent] Using STRIPE_SECRET_KEY from environment");
+    return ENV_STRIPE_SECRET_KEY;
+  }
+
+  // Last resort: hardcoded test key
+  console.log("[create-payment-intent] Using hardcoded fallback test key");
+  return FALLBACK_STRIPE_SECRET_KEY;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -41,22 +83,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Validate Stripe secret key is configured
-    if (!STRIPE_SECRET_KEY) {
-      console.error(
-        "[create-payment-intent] STRIPE_SECRET_KEY is not configured"
-      );
-      return new Response(
-        JSON.stringify({
-          error:
-            "Payment service is not configured. Please contact support.",
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
     // Verify user authentication
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -90,8 +116,27 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Admin client for DB operations
+    // Admin client for DB operations (service role bypasses RLS to read secret keys)
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Fetch Stripe secret key dynamically from DB (with env/hardcoded fallback)
+    const STRIPE_SECRET_KEY = await getStripeSecretKey(supabaseAdmin);
+
+    if (!STRIPE_SECRET_KEY) {
+      console.error(
+        "[create-payment-intent] No Stripe secret key available from any source"
+      );
+      return new Response(
+        JSON.stringify({
+          error:
+            "Payment service is not configured. Please contact support.",
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
 
     // Fetch dynamic pricing from pricing_config table
     let scansPerTopup = DEFAULT_SCANS_PER_TOPUP;
