@@ -1,3 +1,9 @@
+// Suppress non-critical "Failed to report project dependencies metrics" telemetry warning
+// This occurs when Expo CLI cannot reach its telemetry endpoint (e.g., in sandboxed builds)
+if (!process.env.EXPO_NO_TELEMETRY) {
+  process.env.EXPO_NO_TELEMETRY = '1';
+}
+
 const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 const fs = require('fs');

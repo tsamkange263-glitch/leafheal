@@ -27,7 +27,12 @@ module.exports = function (api) {
       {
         // Include @fastshot/* packages for env var inlining
         // babel-preset-expo skips node_modules, so we need this override
-        include: /node_modules\/@fastshot\/(ai|auth)/,
+        // Use a function-based test to avoid "no filename was passed" warning
+        // when Metro processes virtual modules without a filename
+        test: (filename) => {
+          if (!filename) return false;
+          return /node_modules[\\/]@fastshot[\\/](ai|auth)/.test(filename);
+        },
         plugins: [
           [
             'transform-inline-environment-variables',
