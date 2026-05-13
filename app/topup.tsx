@@ -136,6 +136,13 @@ export default function TopUpScreen() {
                 .update({ scan_credits: newCredits })
                 .eq('id', user.id);
               updateCredits(newCredits);
+
+              // EcoCash users are in Zimbabwe — set country if not already set
+              await supabase
+                .from('users')
+                .update({ country: 'Zimbabwe' })
+                .eq('id', user.id)
+                .is('country', null);
             }
 
             setStatus('success');

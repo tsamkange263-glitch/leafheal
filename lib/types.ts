@@ -172,6 +172,7 @@ export type Database = {
       users: {
         Row: {
           created_at: string;
+          country: string | null;
           email: string | null;
           full_name: string | null;
           id: string;
@@ -180,6 +181,7 @@ export type Database = {
         };
         Insert: {
           created_at?: string;
+          country?: string | null;
           email?: string | null;
           full_name?: string | null;
           id: string;
@@ -188,11 +190,36 @@ export type Database = {
         };
         Update: {
           created_at?: string;
+          country?: string | null;
           email?: string | null;
           full_name?: string | null;
           id?: string;
           phone?: string | null;
           scan_credits?: number;
+        };
+        Relationships: [];
+      };
+      user_country_stats: {
+        Row: {
+          id: string;
+          country: string;
+          signed_up_count: number;
+          paid_members_count: number;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          country: string;
+          signed_up_count?: number;
+          paid_members_count?: number;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          country?: string;
+          signed_up_count?: number;
+          paid_members_count?: number;
+          updated_at?: string;
         };
         Relationships: [];
       };

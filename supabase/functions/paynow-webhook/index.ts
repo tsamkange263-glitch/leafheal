@@ -249,6 +249,20 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // EcoCash payments are always from Zimbabwe — set country if not already set
+    const { error: countryError } = await supabase
+      .from("users")
+      .update({ country: "Zimbabwe" })
+      .eq("id", userId)
+      .is("country", null);
+
+    if (countryError) {
+      console.warn(
+        `[paynow-webhook] Failed to set user country to Zimbabwe:`,
+        countryError
+      );
+    }
+
     return new Response("OK", { status: 200, headers: corsHeaders });
   } catch (error) {
     console.error("[paynow-webhook] Unhandled error:", error);

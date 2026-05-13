@@ -4,6 +4,34 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const STRIPE_WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET");
 const DEFAULT_SCANS_PER_TOPUP = 15;
 
+// Map common ISO 3166-1 alpha-2 country codes to readable names
+const COUNTRY_MAP: Record<string, string> = {
+  AF: "Afghanistan", AL: "Albania", DZ: "Algeria", AR: "Argentina",
+  AU: "Australia", AT: "Austria", BD: "Bangladesh", BE: "Belgium",
+  BR: "Brazil", BW: "Botswana", CA: "Canada", CL: "Chile",
+  CN: "China", CO: "Colombia", CD: "Congo (DRC)", CG: "Congo",
+  HR: "Croatia", CZ: "Czech Republic", DK: "Denmark", EG: "Egypt",
+  ET: "Ethiopia", FI: "Finland", FR: "France", DE: "Germany",
+  GH: "Ghana", GR: "Greece", HK: "Hong Kong", HU: "Hungary",
+  IN: "India", ID: "Indonesia", IE: "Ireland", IL: "Israel",
+  IT: "Italy", JP: "Japan", KE: "Kenya", MY: "Malaysia",
+  MX: "Mexico", MA: "Morocco", MZ: "Mozambique", NL: "Netherlands",
+  NZ: "New Zealand", NG: "Nigeria", NO: "Norway", PK: "Pakistan",
+  PE: "Peru", PH: "Philippines", PL: "Poland", PT: "Portugal",
+  RO: "Romania", RU: "Russia", SA: "Saudi Arabia", SG: "Singapore",
+  ZA: "South Africa", KR: "South Korea", ES: "Spain", SE: "Sweden",
+  CH: "Switzerland", TW: "Taiwan", TZ: "Tanzania", TH: "Thailand",
+  TR: "Turkey", UG: "Uganda", UA: "Ukraine", AE: "United Arab Emirates",
+  GB: "United Kingdom", US: "United States", UY: "Uruguay",
+  VE: "Venezuela", VN: "Vietnam", ZM: "Zambia", ZW: "Zimbabwe",
+};
+
+function isoToCountryName(isoCode: string): string | null {
+  if (!isoCode) return null;
+  const upper = isoCode.toUpperCase().trim();
+  return COUNTRY_MAP[upper] || upper; // Return the code itself if not in map
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "content-type, stripe-signature",
@@ -105,8 +133,16 @@ Deno.serve(async (req: Request) => {
     );
     const paymentIntentId = paymentIntent.id;
 
+    // Extract country from payment details (Stripe provides this from card/billing info)
+    const paymentCountry =
+      paymentIntent.charges?.data?.[0]?.payment_method_details?.card?.country ||
+      paymentIntent.latest_charge?.payment_method_details?.card?.country ||
+      paymentIntent.shipping?.address?.country ||
+      paymentIntent.metadata?.country ||
+      null;
+
     console.log(
-      `[stripe-webhook] Payment succeeded: ${paymentIntentId}, user: ${userId}, scans: ${scansToAdd}`
+      `[stripe-webhook] Payment succeeded: ${paymentIntentId}, user: ${userId}, scans: ${scansToAdd}, country: ${paymentCountry || "unknown"}`
     );
 
     if (!userId) {
@@ -197,6 +233,29 @@ Deno.serve(async (req: Request) => {
       console.log(
         `[stripe-webhook] User ${userId} credited with ${scansToAdd} scans. New balance: ${newCredits}`
       );
+    }
+
+    // Update user's country from Stripe card/billing details (ISO 2-letter → full name)
+    if (paymentCountry) {
+      const countryName = isoToCountryName(paymentCountry);
+      if (countryName) {
+        const { error: countryError } = await supabase
+          .from("users")
+          .update({ country: countryName })
+          .eq("id", userId)
+          .is("country", null); // Only set if not already set (don't overwrite)
+
+        if (countryError) {
+          console.warn(
+            `[stripe-webhook] Failed to update user country:`,
+            countryError
+          );
+        } else {
+          console.log(
+            `[stripe-webhook] User ${userId} country set to: ${countryName}`
+          );
+        }
+      }
     }
 
     return new Response(JSON.stringify({ received: true }), {
