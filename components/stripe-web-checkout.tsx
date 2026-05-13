@@ -23,6 +23,7 @@ import {
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { resolveWebPaymentSheet } from '@/lib/stripe-web-payment-bridge';
 import { getPricingConfig, getStripePublishableKey } from '@/lib/app-config';
+import { extractErrorMessage } from '@/lib/error-utils';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
 
@@ -87,8 +88,8 @@ function CheckoutForm({ onClose, priceLabel, scansLabel }: { onClose: () => void
       // Payment succeeded
       resolveWebPaymentSheet({ success: true });
       onClose();
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Payment failed. Please try again.';
+    } catch (e: unknown) {
+      const message = extractErrorMessage(e, 'Payment failed. Please try again.');
       setError(message);
       setLoading(false);
     }

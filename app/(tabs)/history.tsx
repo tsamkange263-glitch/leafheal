@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { ScanCard } from '@/components/scan-card';
 import { useAppStore } from '@/store/useAppStore';
+import { extractErrorMessage, logError } from '@/lib/error-utils';
 import Animated, { FadeOut, Layout } from 'react-native-reanimated';
 import type { Tables } from '@/lib/types';
 
@@ -49,8 +50,8 @@ export default function HistoryScreen() {
       setScans(data || []);
       setFiltered(data || []);
     } catch (e: unknown) {
-      console.error('Error fetching scans:', e);
-      setError('Failed to load scan history');
+      logError('[history] Error fetching scans', e);
+      setError(extractErrorMessage(e, 'Failed to load scan history'));
     } finally {
       setLoading(false);
     }
@@ -132,9 +133,9 @@ export default function HistoryScreen() {
       // Update local state immediately
       setScans((prev) => prev.filter((s) => s.id !== scan.id));
       setRecentScans(scans.filter((s) => s.id !== scan.id).slice(0, 5));
-    } catch (e) {
-      console.error('Error deleting scan:', e);
-      Alert.alert('Error', 'Failed to delete scan. Please try again.');
+    } catch (e: unknown) {
+      logError('[history] Error deleting scan', e);
+      Alert.alert('Error', extractErrorMessage(e, 'Failed to delete scan. Please try again.'));
     } finally {
       setDeleting(null);
     }
@@ -194,9 +195,9 @@ export default function HistoryScreen() {
       setScans([]);
       setFiltered([]);
       setRecentScans([]);
-    } catch (e) {
-      console.error('Error clearing all scans:', e);
-      Alert.alert('Error', 'Failed to clear history. Please try again.');
+    } catch (e: unknown) {
+      logError('[history] Error clearing all scans', e);
+      Alert.alert('Error', extractErrorMessage(e, 'Failed to clear history. Please try again.'));
     } finally {
       setClearingAll(false);
     }

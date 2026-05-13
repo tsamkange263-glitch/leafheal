@@ -17,6 +17,7 @@ import { Fonts } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
+import { extractErrorMessage, logError } from '@/lib/error-utils';
 import Animated, { FadeOut, Layout } from 'react-native-reanimated';
 import type { Tables, RemedyData } from '@/lib/types';
 
@@ -63,8 +64,8 @@ export default function ArchiveScreen() {
       setItems(archiveItems);
       setArchivedIds(archiveItems.map((i) => i.scan_id));
     } catch (e: unknown) {
-      console.error('Error fetching archive:', e);
-      setError('Failed to load archive');
+      logError('[archive] Error fetching archive', e);
+      setError(extractErrorMessage(e, 'Failed to load archive'));
     } finally {
       setLoading(false);
     }
@@ -108,9 +109,9 @@ export default function ArchiveScreen() {
 
       removeArchivedId(item.scan_id);
       setItems((prev) => prev.filter((i) => i.id !== item.id));
-    } catch (e) {
-      console.error('Error removing from archive:', e);
-      Alert.alert('Error', 'Failed to remove from archive. Please try again.');
+    } catch (e: unknown) {
+      logError('[archive] Error removing from archive', e);
+      Alert.alert('Error', extractErrorMessage(e, 'Failed to remove from archive. Please try again.'));
     } finally {
       setDeleting(null);
     }
@@ -147,9 +148,9 @@ export default function ArchiveScreen() {
 
       setItems([]);
       setArchivedIds([]);
-    } catch (e) {
-      console.error('Error clearing all archives:', e);
-      Alert.alert('Error', 'Failed to clear archives. Please try again.');
+    } catch (e: unknown) {
+      logError('[archive] Error clearing all archives', e);
+      Alert.alert('Error', extractErrorMessage(e, 'Failed to clear archives. Please try again.'));
     } finally {
       setClearingAll(false);
     }

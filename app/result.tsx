@@ -22,6 +22,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { AilmentQuery } from '@/components/ailment-query';
 import { getTargetedPlantReference } from '@/lib/herbal-reference';
 import { identifyPlantDisease } from '@/lib/plantnet';
+import { extractErrorMessage, logError } from '@/lib/error-utils';
 import type { Tables, RemedyData } from '@/lib/types';
 import type { PlantNetResult, DiseaseIdentificationResponse } from '@/lib/plantnet';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
@@ -157,9 +158,9 @@ export default function ResultScreen() {
       setScan(data);
       setUserImageUrl(data.image_url || '');
       setMode('detail');
-    } catch (e) {
-      console.error('Error fetching scan:', e);
-      Alert.alert('Error', 'Failed to load scan result');
+    } catch (e: unknown) {
+      logError('[result] Error fetching scan', e);
+      Alert.alert('Error', extractErrorMessage(e, 'Failed to load scan result. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -178,8 +179,8 @@ export default function ResultScreen() {
         if (data && data.length > 0) {
           addArchivedId(scanId);
         }
-      } catch (err) {
-        console.error('Failed to check archive status:', err);
+      } catch (err: unknown) {
+        logError('[result] Failed to check archive status', err);
       }
     };
     checkArchive();
@@ -248,8 +249,8 @@ Provide rich, specific, actionable information. Only return the JSON.`;
             enrichmentData = JSON.parse(match[0]);
           }
         }
-      } catch (e: any) {
-        console.error('Enrichment error:', e);
+      } catch (e: unknown) {
+        logError('[result] Enrichment error', e);
         enrichmentData = {
           overview: `${chosen.plantName} (${chosen.scientificName}) is a member of the ${chosen.family} family. It belongs to the genus ${chosen.genus}.`,
           remedies: {
@@ -306,9 +307,11 @@ Provide rich, specific, actionable information. Only return the JSON.`;
 
       setScan(scanData);
       setMode('detail');
-    } catch (e: any) {
-      console.error('Selection error:', e);
-      setGenerationError('Failed to generate plant information. Tap to retry.');
+    } catch (e: unknown) {
+      logError('[result] Selection error', e);
+      setGenerationError(
+        extractErrorMessage(e, 'Failed to generate plant information. Tap to retry.')
+      );
       setSelectedOption(null);
     } finally {
       setGenerating(false);
@@ -334,9 +337,9 @@ Provide rich, specific, actionable information. Only return the JSON.`;
         });
         addArchivedId(scan.id);
       }
-    } catch (e) {
-      console.error('Archive toggle error:', e);
-      Alert.alert('Error', 'Failed to update archive');
+    } catch (e: unknown) {
+      logError('[result] Archive toggle error', e);
+      Alert.alert('Error', extractErrorMessage(e, 'Failed to update archive. Please try again.'));
     } finally {
       setArchiving(false);
     }
@@ -400,9 +403,9 @@ Provide rich, specific, actionable information. Only return the JSON.`;
     const imageUrl = params.localImageUri || userImageUrl || scan.image_url;
     if (!imageUrl) return;
 
-    fetchDiseaseIdentification(imageUrl, cacheKey).catch((err) => {
-      console.error('Unexpected disease identification failure:', err);
-      setDiseaseError('Disease identification failed unexpectedly. Please try again.');
+    fetchDiseaseIdentification(imageUrl, cacheKey).catch((err: unknown) => {
+      logError('[result] Unexpected disease identification failure', err);
+      setDiseaseError(extractErrorMessage(err, 'Disease identification failed unexpectedly. Please try again.'));
       setDiseaseLoading(false);
     });
   }, [scan, mode]);
@@ -414,8 +417,8 @@ Provide rich, specific, actionable information. Only return the JSON.`;
         .from('scans')
         .update({ disease_results: data as any })
         .eq('id', scanRecordId);
-    } catch (e) {
-      console.error('Failed to persist disease results:', e);
+    } catch (e: unknown) {
+      logError('[result] Failed to persist disease results', e);
     }
   };
 
@@ -443,9 +446,9 @@ Provide rich, specific, actionable information. Only return the JSON.`;
       if (scan?.id) {
         persistDiseaseResults(scan.id, result.data);
       }
-    } catch (e: any) {
-      console.error('Disease identification error:', e);
-      setDiseaseError('Failed to identify diseases. Please try again.');
+    } catch (e: unknown) {
+      logError('[result] Disease identification error', e);
+      setDiseaseError(extractErrorMessage(e, 'Failed to identify diseases. Please try again.'));
       setDiseaseLoading(false);
     }
   };
@@ -513,8 +516,8 @@ Provide specific, actionable advice with real product/compound names where appli
           setPerDiseaseAdvice((prev) => ({ ...prev, [idx]: JSON.stringify(parsed) }));
         }
       }
-    } catch (e: any) {
-      console.error(`Disease advice generation error for ${disease.name}:`, e);
+    } catch (e: unknown) {
+      logError(`[result] Disease advice generation error for ${disease.name}`, e);
     } finally {
       setPerDiseaseAdviceLoading((prev) => ({ ...prev, [idx]: false }));
     }

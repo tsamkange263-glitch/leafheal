@@ -29,6 +29,7 @@ import {
 } from '@/lib/stripe';
 import { openPaymentSheet } from '@/lib/stripe-payment-sheet';
 import { getPricingConfig, type PricingConfig } from '@/lib/app-config';
+import { extractErrorMessage, logError } from '@/lib/error-utils';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 type PaymentStatus = 'idle' | 'processing' | 'polling' | 'success' | 'failed';
@@ -78,8 +79,8 @@ export default function TopUpScreen() {
         if (!cancelled) {
           setPricingConfig(pricing);
         }
-      } catch (err) {
-        console.error('[topup] Failed to load pricing config:', err);
+      } catch (err: unknown) {
+        logError('[topup] Failed to load pricing config', err);
       } finally {
         if (!cancelled) {
           setConfigLoading(false);
@@ -172,8 +173,8 @@ export default function TopUpScreen() {
           }
 
           pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
-        } catch (e) {
-          console.error('[paynow] Poll error:', e);
+        } catch (e: unknown) {
+          logError('[paynow] Poll error', e);
           if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
             setStatus('failed');
             setErrorMsg(
@@ -251,11 +252,11 @@ export default function TopUpScreen() {
       setStatus('polling');
       startEcoCashPolling(result.pollUrl, payment.id);
     } catch (e: unknown) {
-      let errorMessage = 'Failed to initiate payment. Please check your number and try again.';
-      if (e instanceof Error) {
-        errorMessage = e.message;
-      }
-      console.error('EcoCash payment error:', e);
+      const errorMessage = extractErrorMessage(
+        e,
+        'Failed to initiate payment. Please check your number and try again.'
+      );
+      logError('[ecocash] Payment error', e);
       setStatus('failed');
       setErrorMsg(errorMessage);
     }
@@ -304,30 +305,11 @@ export default function TopUpScreen() {
       updateCredits(newCredits);
       setStatus('success');
     } catch (e: unknown) {
-      // Extract a meaningful error message from various error shapes
-      let errorMessage = 'Failed to process card payment. Please check your card details and try again.';
-      if (e instanceof Error) {
-        errorMessage = e.message;
-      } else if (typeof e === 'object' && e !== null) {
-        // Handle Stripe SDK errors and other non-Error objects
-        const errObj = e as Record<string, unknown>;
-        if (typeof errObj.message === 'string' && errObj.message) {
-          errorMessage = errObj.message;
-        } else if (typeof errObj.error === 'string' && errObj.error) {
-          errorMessage = errObj.error;
-        } else if (typeof errObj.localizedMessage === 'string' && errObj.localizedMessage) {
-          errorMessage = errObj.localizedMessage;
-        } else {
-          // Last resort: stringify the object so we never show a blank error
-          const serialized = JSON.stringify(errObj);
-          if (serialized && serialized !== '{}') {
-            errorMessage = `Payment error: ${serialized}`;
-          }
-        }
-      } else if (typeof e === 'string' && e) {
-        errorMessage = e;
-      }
-      console.error('[stripe] Card payment error:', JSON.stringify(e, null, 2) || String(e));
+      const errorMessage = extractErrorMessage(
+        e,
+        'Failed to process card payment. Please check your card details and try again.'
+      );
+      logError('[stripe] Card payment error', e);
       setStatus('failed');
       setErrorMsg(errorMessage);
       Alert.alert('Payment Failed', errorMessage);

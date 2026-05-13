@@ -14,6 +14,7 @@ import { Fonts } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
+import { logError } from '@/lib/error-utils';
 
 export default function AccountScreen() {
   const router = useRouter();
@@ -31,8 +32,8 @@ export default function AccountScreen() {
         .single();
 
       if (profileRes.data) setProfile(profileRes.data);
-    } catch (e) {
-      console.error('Error fetching account data:', e);
+    } catch (e: unknown) {
+      logError('[account] Error fetching account data', e);
     }
   }, [user?.id]);
 

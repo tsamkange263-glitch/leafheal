@@ -15,6 +15,7 @@ import { Fonts } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store/useAppStore';
+import { logError } from '@/lib/error-utils';
 import { CreditBadge } from '@/components/credit-badge';
 import { ScanCard } from '@/components/scan-card';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -50,8 +51,8 @@ export default function HomeScreen() {
       if (profileRes.data) setProfile(profileRes.data);
       if (scansRes.data) setRecentScans(scansRes.data);
       setHasEverPaid((paymentsRes.data?.length ?? 0) > 0);
-    } catch (e) {
-      console.error('Error fetching home data:', e);
+    } catch (e: unknown) {
+      logError('[home] Error fetching home data', e);
     } finally {
       setLoading(false);
     }

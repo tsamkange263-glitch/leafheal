@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
 import { getTargetedPlantReference } from '@/lib/herbal-reference';
+import { logError } from '@/lib/error-utils';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
 const AILMENT_QUERY_TIMEOUT_MS = 90000; // 90 seconds — AI gateway has 6s server timeout + retries with backoff
@@ -200,11 +201,11 @@ export function AilmentQuery({ plantName, scientificName }: AilmentQueryProps) {
       } else {
         throw new Error('No response received from AI');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (cancelledRef.current) return;
-      console.error('Ailment query error:', error);
+      logError('[ailment-query] Query error', error);
 
-      const isTimeout = error?.message?.includes('timed out');
+      const isTimeout = error instanceof Error && error.message?.includes('timed out');
 
       // If timed out or first attempt failed, try a minimal prompt as last resort
       if (!isTimeout) {

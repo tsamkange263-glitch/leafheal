@@ -14,6 +14,7 @@ import { Colors } from '@/constants/Colors';
 import { Fonts } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { extractErrorMessage } from '@/lib/error-utils';
 import type { Tables } from '@/lib/types';
 
 function formatDateTime(dateStr: string): { date: string; time: string } {
@@ -86,8 +87,8 @@ export default function PaymentHistoryScreen() {
 
       if (fetchError) throw fetchError;
       setPayments(data ?? []);
-    } catch (e: any) {
-      setError(e.message || 'Failed to load payment history');
+    } catch (e: unknown) {
+      setError(extractErrorMessage(e, 'Failed to load payment history'));
     } finally {
       setLoading(false);
       setRefreshing(false);

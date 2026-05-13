@@ -23,6 +23,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { CreditBadge } from '@/components/credit-badge';
 import { getHerbalReferenceContext, shouldRefreshCache, refreshHerbalReferenceCache } from '@/lib/herbal-reference';
 import { identifyPlantWithPlantNet, identifyPlantDisease } from '@/lib/plantnet';
+import { extractErrorMessage, logError } from '@/lib/error-utils';
 import Animated, { FadeIn, FadeInDown, FadeInUp, ZoomIn } from 'react-native-reanimated';
 
 const SHOW_CANCEL_AFTER_MS = 15000;
@@ -183,8 +184,8 @@ export default function ScanScreen() {
         }
       }
     } catch (e) {
-      console.error('Image picker error:', e);
-      Alert.alert('Error', 'Failed to capture image. Please try again.');
+      logError('[scan] Image picker error', e);
+      Alert.alert('Error', extractErrorMessage(e, 'Failed to capture image. Please try again.'));
     }
   };
 
@@ -270,9 +271,9 @@ export default function ScanScreen() {
         } else {
           diseaseErrorMsg = diseaseResult.error.message;
         }
-      } catch (diseaseErr: any) {
-        console.error('Disease identification error (non-blocking):', diseaseErr);
-        diseaseErrorMsg = 'Disease check failed. You can retry from the Plant Health tab.';
+      } catch (diseaseErr: unknown) {
+        logError('[scan] Disease identification error (non-blocking)', diseaseErr);
+        diseaseErrorMsg = extractErrorMessage(diseaseErr, 'Disease check failed. You can retry from the Plant Health tab.');
       }
 
       if (cancelledRef.current) return;
@@ -321,8 +322,8 @@ export default function ScanScreen() {
             imageUrl = urlData.publicUrl;
           }
         }
-      } catch (uploadE) {
-        console.error('Upload error (non-blocking):', uploadE);
+      } catch (uploadE: unknown) {
+        logError('[scan] Upload error (non-blocking)', uploadE);
       }
 
       if (cancelledRef.current) return;
@@ -350,14 +351,14 @@ export default function ScanScreen() {
           },
         });
       }
-    } catch (e: any) {
-      console.error('Analysis error:', e);
+    } catch (e: unknown) {
+      logError('[scan] Analysis error', e);
       clearCancelTimer();
 
       if (cancelledRef.current) return;
 
-      const errorMsg = e?.message || String(e);
-      Alert.alert('Analysis Failed', `Error: ${errorMsg.substring(0, 250)}`, [{ text: 'OK' }]);
+      const errorMsg = extractErrorMessage(e, 'Plant analysis failed. Please try again.');
+      Alert.alert('Analysis Failed', errorMsg.substring(0, 250), [{ text: 'OK' }]);
       setStep('review');
       setShowCancel(false);
     } finally {
