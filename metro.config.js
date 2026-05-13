@@ -2,6 +2,11 @@ const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 const fs = require('fs');
 
+// Block native-only modules from being resolved during web builds
+const NATIVE_ONLY_MODULES = [
+  '@stripe/stripe-react-native',
+];
+
 const config = getDefaultConfig(__dirname);
 
 // Inspector overlay — injected by build system (not part of template)
@@ -33,6 +38,16 @@ config.resolver = {
   // Allow .wasm files to be resolved as assets (needed by expo-sqlite web)
   assetExts: [...(config.resolver.assetExts || []), 'wasm'],
   resolverMainFields: ['react-native', 'browser', 'main'],
+  // Resolve native-only modules to an empty module on web
+  resolveRequest: (context, moduleName, platform) => {
+    if (platform === 'web' && NATIVE_ONLY_MODULES.some(m => moduleName === m || moduleName.startsWith(m + '/'))) {
+      return {
+        filePath: path.resolve(__dirname, 'lib/empty-module.js'),
+        type: 'sourceFile',
+      };
+    }
+    return context.resolveRequest(context, moduleName, platform);
+  },
 };
 
 // Configure Metro for proxy deployment

@@ -7,7 +7,6 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,6 +27,7 @@ import {
   confirmStripePayment,
   markPaymentFailed,
 } from '@/lib/stripe';
+import { openPaymentSheet } from '@/lib/stripe-payment-sheet';
 import { getPaymentConfig, type PaymentConfig } from '@/lib/app-config';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
@@ -280,61 +280,25 @@ export default function TopUpScreen() {
       // 1. Create Payment Intent via Edge Function
       const intentData = await createPaymentIntent();
 
-      // 2. Present the Stripe Payment Sheet (native only)
-      if (Platform.OS === 'web') {
-        // On web, we can't use the native Payment Sheet
-        // Fall back to a message telling the user to use the mobile app
-        setStatus('failed');
-        setErrorMsg('Card payments are only available on the mobile app. Please use EcoCash on web, or download the app for card payments.');
-        await markPaymentFailed(intentData.paymentId, user.id);
-        return;
-      }
+      // 2. Present the Stripe Payment Sheet (platform-split handles web vs native)
+      const result = await openPaymentSheet(intentData.clientSecret);
 
-      // Dynamic require to avoid web bundling issues
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { initPaymentSheet, presentPaymentSheet } = require('@stripe/stripe-react-native');
-
-      const { error: initError } = await initPaymentSheet({
-        paymentIntentClientSecret: intentData.clientSecret,
-        merchantDisplayName: 'HerbScan',
-        allowsDelayedPaymentMethods: false,
-        googlePay: {
-          merchantCountryCode: 'US',
-          testEnv: __DEV__,
-        },
-        applePay: {
-          merchantCountryCode: 'US',
-        },
-      });
-
-      if (initError) {
-        console.error('[stripe] initPaymentSheet error:', initError);
-        setStatus('failed');
-        setErrorMsg(initError.message || 'Failed to initialize payment. Please try again.');
-        await markPaymentFailed(intentData.paymentId, user.id);
-        return;
-      }
-
-      // 3. Present the Payment Sheet to the user
-      const { error: presentError } = await presentPaymentSheet();
-
-      if (presentError) {
-        // User cancelled or payment failed
-        if (presentError.code === 'Canceled') {
+      if (!result.success) {
+        if (result.cancelled) {
           // User dismissed the sheet — go back to idle
           setStatus('idle');
           await markPaymentFailed(intentData.paymentId, user.id);
           return;
         }
 
-        console.error('[stripe] presentPaymentSheet error:', presentError);
+        console.error('[stripe] Payment sheet error:', result.error);
         setStatus('failed');
-        setErrorMsg(presentError.message || 'Payment failed. Please try again.');
+        setErrorMsg(result.error || 'Payment failed. Please try again.');
         await markPaymentFailed(intentData.paymentId, user.id);
         return;
       }
 
-      // 4. Payment succeeded — confirm in our DB and credit user
+      // 3. Payment succeeded — confirm in our DB and credit user
       const { newCredits } = await confirmStripePayment(
         intentData.paymentId,
         user.id,
