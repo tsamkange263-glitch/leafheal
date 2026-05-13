@@ -14,7 +14,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
+// Read from environment variable (set via Supabase Dashboard/CLI secrets)
+// Falls back to the configured test key for development
+const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY") || "sk_test_51TWRgL9bzIIw4TAux2b5nhWHYiH2KubYuCBDa0S2eaj2LzWOpAgTMkq59Dtc4u0b6xFGtWNFCNiBUyYTycPwSXcm00FqzHaWXm";
 const DEFAULT_SCANS_PER_TOPUP = 12;
 const AMOUNT_USD = 100; // $1.00 in cents
 
