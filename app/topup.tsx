@@ -308,11 +308,24 @@ export default function TopUpScreen() {
       updateCredits(newCredits);
       setStatus('success');
     } catch (e: unknown) {
-      let errorMessage = 'Failed to process card payment. Please try again.';
+      // Extract a meaningful error message from various error shapes
+      let errorMessage = 'Failed to process card payment. Please check your card details and try again.';
       if (e instanceof Error) {
         errorMessage = e.message;
+      } else if (typeof e === 'object' && e !== null) {
+        // Handle Stripe SDK errors and other non-Error objects
+        const errObj = e as Record<string, unknown>;
+        if (typeof errObj.message === 'string' && errObj.message) {
+          errorMessage = errObj.message;
+        } else if (typeof errObj.error === 'string' && errObj.error) {
+          errorMessage = errObj.error;
+        } else if (typeof errObj.localizedMessage === 'string' && errObj.localizedMessage) {
+          errorMessage = errObj.localizedMessage;
+        }
+      } else if (typeof e === 'string' && e) {
+        errorMessage = e;
       }
-      console.error('[stripe] Card payment error:', e);
+      console.error('[stripe] Card payment error:', JSON.stringify(e, null, 2) || String(e));
       setStatus('failed');
       setErrorMsg(errorMessage);
     }

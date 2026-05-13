@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
+const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
 const DEFAULT_SCANS_PER_TOPUP = 12;
 const AMOUNT_USD = 100; // $1.00 in cents
 
@@ -26,6 +26,22 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // Validate Stripe secret key is configured
+    if (!STRIPE_SECRET_KEY) {
+      console.error(
+        "[create-payment-intent] STRIPE_SECRET_KEY is not configured"
+      );
+      return new Response(
+        JSON.stringify({
+          error:
+            "Payment service is not configured. Please contact support.",
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
     // Verify user authentication
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -107,10 +123,25 @@ Deno.serve(async (req: Request) => {
     if (!stripeResponse.ok) {
       const errorBody = await stripeResponse.text();
       console.error("[create-payment-intent] Stripe error:", errorBody);
+
+      // Parse Stripe error for a user-friendly message
+      let userMessage = "Failed to create payment intent. Please try again.";
+      try {
+        const stripeError = JSON.parse(errorBody);
+        if (stripeError?.error?.message) {
+          userMessage = stripeError.error.message;
+        }
+      } catch {
+        // Use default message if parsing fails
+      }
+
       return new Response(
-        JSON.stringify({ error: "Failed to create payment intent" }),
+        JSON.stringify({
+          error: userMessage,
+          code: "stripe_error",
+        }),
         {
-          status: 500,
+          status: 502,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
@@ -162,8 +193,13 @@ Deno.serve(async (req: Request) => {
     );
   } catch (error) {
     console.error("[create-payment-intent] Unhandled error:", error);
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
+      JSON.stringify({
+        error: message,
+        code: "internal_error",
+      }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -26,27 +26,63 @@ export async function createPaymentIntent(): Promise<PaymentIntentResponse> {
     throw new Error('You must be signed in to make a payment.');
   }
 
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-  const response = await fetch(
-    `${supabaseUrl}/functions/v1/create-payment-intent`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Payment setup failed (${response.status})`);
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  if (!supabaseUrl) {
+    throw new Error('Payment service configuration error. Please try again later.');
   }
 
-  const data: PaymentIntentResponse = await response.json();
+  let response: Response;
+  try {
+    response = await fetch(
+      `${supabaseUrl}/functions/v1/create-payment-intent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+  } catch (networkError) {
+    // Network-level failure (no internet, DNS, CORS, etc.)
+    console.error('[stripe] Network error creating payment intent:', networkError);
+    throw new Error(
+      'Unable to connect to payment service. Please check your internet connection and try again.'
+    );
+  }
+
+  if (!response.ok) {
+    let errorMessage = `Payment setup failed (HTTP ${response.status})`;
+    try {
+      const errorData = await response.json();
+      if (errorData?.error && typeof errorData.error === 'string') {
+        errorMessage = errorData.error;
+      }
+    } catch {
+      // If JSON parsing fails, try to get the text response
+      try {
+        const textBody = await response.text();
+        if (textBody) {
+          console.error('[stripe] Non-JSON error response:', textBody);
+        }
+      } catch {
+        // Ignore - use default error message
+      }
+    }
+    throw new Error(errorMessage);
+  }
+
+  let data: PaymentIntentResponse;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error('Invalid response from payment server. Please try again.');
+  }
 
   if (!data.clientSecret) {
-    throw new Error('Invalid response from payment server.');
+    throw new Error(
+      'Payment setup incomplete — no client secret received. Please try again.'
+    );
   }
 
   return data;
