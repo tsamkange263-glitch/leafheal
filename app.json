@@ -51,8 +51,7 @@
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
-      "baseUrl": "/2e7e37a7-15ca-4684-9617-88e98b5e5d32/d0b34ee207bb53c4/"
+      "typedRoutes": true
     },
     "owner": "samkanget",
     "extra": {
