@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": 1778762263307,
+  "generatedAt": 1778762877091,
   "entries": {
     "LoginScreen@app/(auth)/login.tsx:107": {
       "element": {
@@ -1607,70 +1607,6 @@
               "col": 24,
               "endCol": 26,
               "raw": "14"
-            }
-          }
-        }
-      ]
-    },
-    "Callback@app/auth/callback.tsx:37": {
-      "element": {
-        "file": "app/auth/callback.tsx",
-        "line": 37
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/auth/callback.tsx",
-          "properties": {
-            "flex": {
-              "line": 37,
-              "col": 27,
-              "endCol": 28,
-              "raw": "1"
-            },
-            "backgroundColor": {
-              "line": 37,
-              "col": 47,
-              "endCol": 56,
-              "raw": "'#F1F8E9'"
-            },
-            "alignItems": {
-              "line": 37,
-              "col": 70,
-              "endCol": 78,
-              "raw": "'center'"
-            },
-            "justifyContent": {
-              "line": 37,
-              "col": 96,
-              "endCol": 104,
-              "raw": "'center'"
-            }
-          }
-        }
-      ]
-    },
-    "Callback@app/auth/callback.tsx:39": {
-      "element": {
-        "file": "app/auth/callback.tsx",
-        "line": 39
-      },
-      "styles": [
-        {
-          "origin": "inline",
-          "file": "app/auth/callback.tsx",
-          "properties": {
-            "marginTop": {
-              "line": 39,
-              "col": 34,
-              "endCol": 36,
-              "raw": "16"
-            },
-            "fontSize": {
-              "line": 39,
-              "col": 75,
-              "endCol": 77,
-              "raw": "15"
             }
           }
         }
@@ -23335,6 +23271,70 @@
               "col": 24,
               "endCol": 25,
               "raw": "1"
+            }
+          }
+        }
+      ]
+    },
+    "Callback@app/auth/callback.tsx:37": {
+      "element": {
+        "file": "app/auth/callback.tsx",
+        "line": 37
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/auth/callback.tsx",
+          "properties": {
+            "flex": {
+              "line": 37,
+              "col": 27,
+              "endCol": 28,
+              "raw": "1"
+            },
+            "backgroundColor": {
+              "line": 37,
+              "col": 47,
+              "endCol": 56,
+              "raw": "'#F1F8E9'"
+            },
+            "alignItems": {
+              "line": 37,
+              "col": 70,
+              "endCol": 78,
+              "raw": "'center'"
+            },
+            "justifyContent": {
+              "line": 37,
+              "col": 96,
+              "endCol": 104,
+              "raw": "'center'"
+            }
+          }
+        }
+      ]
+    },
+    "Callback@app/auth/callback.tsx:39": {
+      "element": {
+        "file": "app/auth/callback.tsx",
+        "line": 39
+      },
+      "styles": [
+        {
+          "origin": "inline",
+          "file": "app/auth/callback.tsx",
+          "properties": {
+            "marginTop": {
+              "line": 39,
+              "col": 34,
+              "endCol": 36,
+              "raw": "16"
+            },
+            "fontSize": {
+              "line": 39,
+              "col": 75,
+              "endCol": 77,
+              "raw": "15"
             }
           }
         }
